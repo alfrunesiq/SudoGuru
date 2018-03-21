@@ -1,0 +1,12 @@
+\documentclass[a4paper]{article}
+\input{./tex/preamble.tex}
+\newenvironment{solution}
+  {\renewcommand\qedsymbol{$\blacksquare$}\begin{proof}[Solution: ]}
+  {\end{proof}}
+
+\begin{document}
+	\input{tex/front_page}
+	\newpage
+
+	\input{tex/main}
+\end{document}
