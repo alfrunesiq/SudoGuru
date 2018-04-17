@@ -21,6 +21,8 @@ int main(void) {
     brd[4][2] = 4;
     brd[5][1] = 9;
     brd[5][6] = 1;
+
+    brd[8][6] = 1;
     brd[6][0] = 5;
     brd[7][2] = 2;
     brd[7][4] = 1;
@@ -45,10 +47,6 @@ int main(void) {
     Board board(brd);
     printf("solving...\n");
     int **solution = board.solve();
-    int **tmp;
-    for (int i = 0; i < 10; i++){
-        tmp = board.solve();
-    }
 
     if (solution == NULL) {
         return -1; 

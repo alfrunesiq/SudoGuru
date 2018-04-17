@@ -3,10 +3,9 @@
 #include <iostream>
 #include <stdio.h>
 
-#include "sudoku_brd_items.hpp"
 #include "sudoku_board.hpp"
 
-#define MAX_SOLVE_ITER 10000000
+#define MAX_SOLVE_ITER 1000000L
 
 bool ticket_group::contains(int val) {
     for (Ticket *t : members) {
@@ -72,6 +71,17 @@ Board::Board(int **grid)
     }
 }
 
+Ticket *Board::getFirstNonFixed() {
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            if (!board.at(i).at(j)->is_fixed()) {
+                return board.at(i).at(j);
+            }
+        }
+    }
+    return NULL;
+}
+
 /**
  * Board::solve
  * solves the containting sudoku and returns 
@@ -87,6 +97,7 @@ int **Board::solve()
     long count = 0;
     bool forward = true;
     std::vector<int> possible;
+    Ticket *firstChangeable = Board::getFirstNonFixed();
 
     while(++count < MAX_SOLVE_ITER) {
         possible.clear();
@@ -104,13 +115,19 @@ int **Board::solve()
                 forward = false;
             } else if (board.at(i).at(j)->get_value() == ticket_val &&
                     forward == false){
-                board.at(i).at(j)->set_value(0);
+                if (board.at(i).at(j) != firstChangeable) {
+                    board.at(i).at(j)->set_value(0);
+                } else {
+                    // if we reached here, we need to terminate
+                    // else the loop will reach an oscillating state
+                    return NULL;
+                }
             } else {
                 forward = true;
             }
         }
 
-        if (i == 8 && j == 8) {
+        if (i == 8 && j == 8 && forward == true) {
             break;
         }
         if (forward) {

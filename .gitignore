@@ -1,1 +1,6 @@
-./ideer.txt
+ideer.txt
+src/test*
+src/sudokusolver/test*
+src/build
+state-machine.*
+*.html
