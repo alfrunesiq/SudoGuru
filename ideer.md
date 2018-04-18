@@ -1,4 +1,11 @@
 # Ide brainstorming
+
+### Session 3: 
+![alt text](./state-machine.png "State machine drawing"))
+Endelig fått opp programskjelett og testet ulike metoder. Av metoder som er aktuelle å implimentere ved en senere annledning: 
+1. Harris floodfill for brett deteksjon. Hver harris punkt, gjør floodfill, og inkrementerer stemme for (nærmeste binære 255) region i det segmenterte bildet tilsvarende cv::connectedcomponents() må muligens ha 3 bilder: segmenterte (input) bilde, connected component id bilde, og connected component stemmer; eventuelt ha sistnevnte som en `std::vector<cv::Vec3i>` (må bruke cv::mixChannels())
+
+
 #### Inspirasjon?: 
 http://aishack.in/tutorials/sudoku-grabber-opencv-detection/
 

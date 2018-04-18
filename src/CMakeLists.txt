@@ -23,7 +23,7 @@ add_subdirectory(sudokusolver)
 add_executable(${PROJECT_NAME}
   main.cpp
   sudoguru.cpp
-  extract_grid.cpp
+  extractools.cpp
   )
 
 target_link_libraries(${PROJECT_NAME} SudokuSolver ${OpenCV_LIBS})
