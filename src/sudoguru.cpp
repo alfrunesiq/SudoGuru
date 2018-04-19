@@ -1,16 +1,12 @@
 #include "sudoguru.hpp"
-#include <chrono>
-#include <thread>
-
-#ifndef CAMERA_ID_0
-    #define CAMERA_ID_0 1
-#endif
 
 int sudoguru (void)
 {
 #ifdef DEBUG
     cv::namedWindow("cam0");
     cv::namedWindow("Thresholded");
+    cv::namedWindow("Perspective", cv::WINDOW_AUTOSIZE);
+    cv::namedWindow("Corner", cv::WINDOW_AUTOSIZE);
 #endif
     cv::VideoCapture cap;
     if (!cap.open(CAMERA_ID_0)) {
@@ -21,18 +17,25 @@ int sudoguru (void)
     int height = static_cast<int> (cap.get(cv::CAP_PROP_FRAME_HEIGHT));
     int width = static_cast<int> (cap.get(cv::CAP_PROP_FRAME_WIDTH));
 
+    // frame buffers
     cv::Mat frame(height, width, CV_8UC3);
     cv::Mat frame_buf(height, width, CV_8UC1),
             frame_bin(height, width, CV_8UC1);
+//#ifdef DEBUG
+    cv::Mat prspct;
+    cv::Mat debug_buf;
+//#endif
+
+    // morhological structuring elements
     cv::Mat _3x3cross = cv::getStructuringElement(cv::MORPH_CROSS,
                                                   cv::Size(3,3)),
            _11x11circ = cv::getStructuringElement(cv::MORPH_ELLIPSE,
                                                    cv::Size(11,11));
-    cv::Mat buf[3];
-    cv::Mat buf_comp;
 
+    // Corner points and edge lines
+    std::vector<cv::Point2f> pts;
+    std::vector<cv::Vec2f> edges;
 
-    std::vector<cv::Vec2f> lines;
     for (;;)
     {
         cap >> frame;
@@ -40,7 +43,9 @@ int sudoguru (void)
             std::cerr << "sudoguru.cpp: Frame empty\n";
             return EXIT_FAILURE;
         }
+#ifdef DEBUG
         auto t1 = std::chrono::high_resolution_clock::now();
+#endif
 
         // Convert to grayscale and adaptively threshold; assuming board
         // is high contrast
@@ -49,9 +54,10 @@ int sudoguru (void)
         cv::adaptiveThreshold(frame_buf, frame_bin, 255,
                               cv::ADAPTIVE_THRESH_MEAN_C,
                               cv::THRESH_BINARY_INV, 11, 5.0);
+        /* morphological closing */
         cv::dilate(frame_bin, frame_bin, _3x3cross);
-        frame_buf = biggestConnectedComponents(frame_bin);
         cv::erode(frame_buf, frame_buf, _3x3cross);
+        frame_buf = biggestConnectedComponents(frame_bin);
 
         /*
         cv::cornerMinEigenVal(frame_buf, buf[0], 5, 3);
@@ -68,42 +74,24 @@ int sudoguru (void)
         cv::minMaxLoc(buf[0], &min, &max);
         cv::threshold(buf[0], buf[0], 0.8*max, 255, cv::THRESH_BINARY);*/
 
-        std::vector<cv::Vec2f> edges = extractEdges(frame_buf);
+        edges = extractEdges(frame_buf);
+
+        for (cv::Vec2f edge : edges) {
+            float y = edge[0] / std::sin(edge[1]),
+                x = -1 / std::tan(edge[1]);
+            cv::line(frame_buf, cv::Point(0, y),
+                     cv::Point(frame_buf.cols, frame_buf.cols*x+y), CV_RGB(0,0,255));
+        }
         if (edges.size() > 0) {
-            // r1 = x1 cos (theta1) + y1 sin (theta1)
-            // r2 = x2 cos (theta2) + y2 sin (theta2)
-            // ax + by + c = 0
-            // l = [a, b, c] ; ~x = [x, y, w] ; l.T * ~x = 0
-            // l1.T ~x = 0, ~x.T l2 = 0
-            // l1.T ~x = l2.T ~x
-            // ~x_intrsct = l2 x l1;
-            // x_intersct = [xi/wi, yi/wi]
-            // l_i = [cos(theta_i), sin(theta_i), r_i]
-            /* TODO: Wrap into function; cv::Point getLineIntersection(cv::Vec2f rt) */
-        
             cv::Vec3f l1, l2, l3;
-            std::vector<cv::Point> pts;
-            l1[0] = std::cos(edges[0][1]), l1[1] = std::sin(edges[0][1]), l1[2] = edges[0][0];
-            l2[0] = std::cos(edges[1][1]), l2[1] = std::sin(edges[1][1]), l2[2] = edges[1][0];
-            l3 = l1.cross(l2);
-            pts.push_back(cv::Point(cv::abs(l3[0]/l3[2]), cv::abs(l3[1]/l3[2])));
-            l2[0] = std::cos(edges[3][1]), l2[1] = std::sin(edges[3][1]), l2[2] = edges[3][0];
-            l3 = l1.cross(l2);
-            pts.push_back(cv::Point(cv::abs(l3[0]/l3[2]), cv::abs(l3[1]/l3[2])));
-            l1[0] = std::cos(edges[2][1]), l1[1] = std::sin(edges[2][1]), l1[2] = edges[2][0];
-            l3 = l1.cross(l2);
-            pts.push_back(cv::Point(cv::abs(l3[0]/l3[2]), cv::abs(l3[1]/l3[2])));
-
-            l2[0] = std::cos(edges[1][1]), l2[1] = std::sin(edges[1][1]), l2[2] = edges[1][0];
-            l3 = l1.cross(l2);
-            pts.push_back(cv::Point(cv::abs(l3[0]/l3[2]), cv::abs(l3[1]/l3[2])));
-
-#ifdef DEBUG
-            cv::circle(frame, pts[0], 3, CV_RGB(0,0,255), 2);
-            cv::circle(frame, pts[1], 3, CV_RGB(0,0,255), 2);
-            cv::circle(frame, pts[2], 3, CV_RGB(0,0,255), 2);
-            cv::circle(frame, pts[3], 3, CV_RGB(0,0,255), 2);
-         // draw lines
+            pts = extractCorners(edges);
+//#ifdef DEBUG
+            // draw corners
+            cv::drawMarker(frame, pts[1], CV_RGB(255, 128, 0), cv::MARKER_DIAMOND);
+            cv::drawMarker(frame, pts[2], CV_RGB(255, 255, 56), cv::MARKER_DIAMOND);
+            cv::drawMarker(frame, pts[0], CV_RGB(56, 128, 255), cv::MARKER_DIAMOND);
+            cv::drawMarker(frame, pts[3], CV_RGB(230, 57, 255), cv::MARKER_DIAMOND);
+            // draw lines
             for (unsigned int i = 0; i < 4; i++) {
                 if (edges[i][1] != 0) {
                     float y = edges[i][0] / std::sin(edges[i][1]),
@@ -112,21 +100,49 @@ int sudoguru (void)
                              cv::Point(frame_buf.cols, frame_buf.cols*x+y), CV_RGB(0,0,255));
                 }
             }
-#endif
+
+            std::vector<cv::Point2f> p = {cv::Point2f(0.0f,0.0f),
+                                          cv::Point2f(BOARDSIZE,0.0f),
+                                          cv::Point2f(BOARDSIZE,BOARDSIZE),
+                                          cv::Point2f(0.0f,BOARDSIZE)};
+            cv::Mat H = cv::getPerspectiveTransform(pts, p);
+            if (H.rows == 3) {
+                cv::warpPerspective(frame, prspct, H, cv::Size(BOARDSIZE,BOARDSIZE));
+                cv::imshow("Perspective", prspct);
+                cv::cvtColor(prspct, prspct, cv::COLOR_BGR2GRAY);
+                cv::adaptiveThreshold(prspct, debug_buf, 255,
+                                      cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+                                      cv::THRESH_BINARY_INV, 11, 4.0);
+                /* replace: board = extractGrid(prspct) */
+                std::vector<cv::Vec2f> lns;
+                cv::HoughLines(debug_buf, lns, 1, CV_PI/180, 150.0);
+               for (int i = static_cast<int>(lns.size()-1) ; i >= 0 ; i--) {
+                   if (lns[i][1] > 0.14 && lns[i][1] < (CV_PI/2.0f - 0.14)) {
+                       lns.pop_back();
+                   }
+               }
+                lns = bundleHough(lns, 17.0, 1.0);
+                debug_buf = cv::Mat::zeros(debug_buf.size(), debug_buf.type());
+                for (size_t i = 0; i < lns.size(); i++) {
+                    cv::Vec2f ln = lns[i];
+                    float y = ln[0] / std::sin(ln[1]),
+                          x = -1 / std::tan(ln[1]);
+                    cv::line(debug_buf, cv::Point(0, y),
+                             cv::Point(debug_buf.cols, debug_buf.cols*x+y), CV_RGB(0,0,255));
+                }
+                cv::imshow("Corner", debug_buf);
+            }
         }
-        /* TODO: implement DLT to estimate homography from determined points */
-        /*          - sanity check ? */
-
-#ifdef DEBUG
-
+//#endif
         cv::imshow("cam0", frame);
+#ifdef DEBUG
+        auto t2 = std::chrono::high_resolution_clock::now();
         cv::imshow("Thresholded", frame_bin);
         cv::imshow("CC", frame_buf);
-#endif
-
-        auto t2 = std::chrono::high_resolution_clock::now();
         std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count()
                   << std::endl;
+#endif
+
         if (cv::waitKey(1) >= 0) {
             break;
         }

@@ -11,6 +11,17 @@
 
 #include "extractools.hpp"
 
+#ifdef DEBUG
+  #include <chrono>
+  #include <thread>
+#endif
+
+#ifndef CAMERA_ID_0
+  #define CAMERA_ID_0 1
+#endif
+
+#define BOARDSIZE    9*34 // roughly 32x32 per box
+
 int sudoguru(void);
 
 #endif /* _SUDOGURU_HPP_ */
