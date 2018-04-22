@@ -17,7 +17,7 @@
 #endif
 
 #ifndef CAMERA_ID_0
-  #define CAMERA_ID_0 1
+  #define CAMERA_ID_0 2
 #endif
 
 #define BOARDSIZE    9*34 // roughly 32x32 per box

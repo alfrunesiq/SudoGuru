@@ -107,30 +107,11 @@ int sudoguru (void)
                                           cv::Point2f(0.0f,BOARDSIZE)};
             cv::Mat H = cv::getPerspectiveTransform(pts, p);
             if (H.rows == 3) {
-                cv::warpPerspective(frame, prspct, H, cv::Size(BOARDSIZE,BOARDSIZE));
+                cv::warpPerspective(frame, prspct, H,
+                                    cv::Size(BOARDSIZE,BOARDSIZE),
+                                    cv::INTER_LINEAR);
+                extractGrid(prspct);
                 cv::imshow("Perspective", prspct);
-                cv::cvtColor(prspct, prspct, cv::COLOR_BGR2GRAY);
-                cv::adaptiveThreshold(prspct, debug_buf, 255,
-                                      cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-                                      cv::THRESH_BINARY_INV, 11, 4.0);
-                /* replace: board = extractGrid(prspct) */
-                std::vector<cv::Vec2f> lns;
-                cv::HoughLines(debug_buf, lns, 1, CV_PI/180, 150.0);
-               for (int i = static_cast<int>(lns.size()-1) ; i >= 0 ; i--) {
-                   if (lns[i][1] > 0.14 && lns[i][1] < (CV_PI/2.0f - 0.14)) {
-                       lns.pop_back();
-                   }
-               }
-                lns = bundleHough(lns, 17.0, 1.0);
-                debug_buf = cv::Mat::zeros(debug_buf.size(), debug_buf.type());
-                for (size_t i = 0; i < lns.size(); i++) {
-                    cv::Vec2f ln = lns[i];
-                    float y = ln[0] / std::sin(ln[1]),
-                          x = -1 / std::tan(ln[1]);
-                    cv::line(debug_buf, cv::Point(0, y),
-                             cv::Point(debug_buf.cols, debug_buf.cols*x+y), CV_RGB(0,0,255));
-                }
-                cv::imshow("Corner", debug_buf);
             }
         }
 //#endif

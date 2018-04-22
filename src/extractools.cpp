@@ -1,4 +1,5 @@
 #include "extractools.hpp"
+#include "sudoguru.hpp"
 #include <iostream>
 
 static cv::Mat lbl, stats, centroids;
@@ -84,6 +85,7 @@ std::vector<cv::Vec2f> bundleHough (std::vector<cv::Vec2f> hough,
         mean[1] = (mean[1] > CV_PI) ? mean[1] - CV_PI : mean[1];
         ret.push_back(mean);
     }
+
     return ret;
 }
 
@@ -202,8 +204,17 @@ std::vector<cv::Point2f> extractCorners (std::vector<cv::Vec2f> edges)
     pts.push_back(getLineIntersection(edges[3], edges[0]));
 
     cv::Point2f mean = (pts[0] + pts[1] + pts[2] + pts[3]) / 4;
+    int min = 0;
+    for (int i = 1; i < 4; i++) {
+        if (cv::norm(pts[min]) > cv::norm(pts[i])) {
+            min = i;
+        }
+    }
+    ret.push_back(pts[min]);
+    pts.erase(pts.begin() + min);
+    /*
     ret.push_back(pts.back());
-    pts.pop_back();
+    pts.pop_back();*/
     for (int i = 1; i < 4; i++) {
         cv::Point2f e = ret.back() - mean;
         cv::Point2f next = pts[0];
@@ -228,6 +239,10 @@ std::vector<cv::Point2f> extractCorners (std::vector<cv::Vec2f> edges)
     return ret;
 }
 
+static bool compRho(cv::Vec2f l1, cv::Vec2f l2) {
+    return (l1[0] < l2[0]);
+}
+
 /**
  * @brief  attempts to extract the 9x9 sudokugrid
  * @param board   image of segmented board
@@ -241,6 +256,12 @@ std::vector<std::vector<int>> extractGrid (cv::Mat board) {
                           cv::ADAPTIVE_THRESH_GAUSSIAN_C,
                           cv::THRESH_BINARY_INV, 11, 4.0);
     std::vector<cv::Vec2f> lines;
+    cv::Mat board32f;
+    double max, min;
+    board.convertTo(board32f, CV_32F);
+    cv::minMaxLoc(board32f, &min, &max);
+    board32f = (board32f - min)/(max-min);
+
     cv::HoughLines(buf, lines, 1, CV_PI/180, 150.0);
     for (int i = static_cast<int>(lines.size()-1) ; i >= 0 ; i--) {
         if (lines[i][1] > 0.14 && lines[i][1] < (CV_PI/2.0f - 0.14)) {
@@ -249,39 +270,188 @@ std::vector<std::vector<int>> extractGrid (cv::Mat board) {
     }
     lines = bundleHough(lines, 17.0, 1.0);
 
-    int num_horizontal = 0,
-        num_vertical   = 0;
+    std::vector<cv::Vec2f> horizontal, vertical;
     for (cv::Vec2f line : lines) {
         if (line[1] < CV_PI/4.0f || line[1] > 3.0f*CV_PI/4.0f) {
-            num_horizontal++;
+            vertical.push_back(line);
         } else {
-            num_vertical++;
+            horizontal.push_back(line);
         }
     }
-    // sanity check
-    if (num_vertical < 5 || num_horizontal < 5) {
+    if (vertical.size() < 5 || horizontal.size() < 5) {
+#ifdef DEBUG
+        std::cout << "Insufiicient number of lines\n";
+#endif
         return grid;
     }
 
-    /* TODO: Finish off the actual grid extraction */
-    if (num_vertical < 8) {
-        // Probably found edges + bold lines, and possibly a couple
-        // thin lines;
-    } else {
-        // If 10: found all lines + edges
-        // If less: figure out what's missing
+    std::sort(vertical.begin(), vertical.end(), compRho);
+    std::sort(horizontal.begin(), horizontal.end(), compRho);
+    // interpolate missing lines + sanity check
+    if (vertical[0][0] > 16.0f) {
+        vertical.insert(vertical.begin(), cv::Vec2f(0.0f, vertical[0][1]));
+    }
+    if (vertical.back()[0] < (BOARDSIZE - 16.0f)) {
+        vertical.push_back(cv::Vec2f(BOARDSIZE, vertical.back()[1]));
+    }
+    if (horizontal[0][0] > 16.0f) {
+        horizontal.insert(horizontal.begin(), cv::Vec2f(0.0f, horizontal[0][1]));
+    }
+    if (horizontal.back()[0] < (BOARDSIZE - 16.0f)) {
+        horizontal.push_back(cv::Vec2f(BOARDSIZE, horizontal.back()[1]));
+    }
+    for (size_t i = 1; i < vertical.size(); i++) {
+        float diff = cv::abs(vertical[i][0] - vertical[i-1][0]);
+        if (diff < 16.0f) {
+            if (vertical[i-1][0] < 0) {
+                vertical[i-1][0] = -vertical[i-1][0];
+                vertical[i-1][1] = vertical[i-1][1] < CV_PI/2.0f ?
+                                        vertical[i-1][1] + CV_PI :
+                                        vertical[i-1][1] - CV_PI;
+            }
+            if (vertical[i][0] < 0) {
+                vertical[i][0] = -vertical[i][0];
+                vertical[i][1] = vertical[i][1] < CV_PI/2.0f ?
+                                      vertical[i][1] + CV_PI :
+                                      vertical[i][1] - CV_PI;
+            }
+            vertical[i-1][0] = (vertical[i-1][0] + vertical[i][0]) / 2.0f;
+            vertical.erase(vertical.begin() + i);
+        } else if (diff > 60.0f && diff < 76.0f) {
+            // one missing line
+            vertical.insert(vertical.begin() + i, vertical[i]);
+            vertical[i][0] -= diff;
+            i++;
+        } else if (diff > 90.0f && diff < 114.0f) {
+            // two missing lines
+            diff = diff/2.0f;
+            vertical.insert(vertical.begin() + i, vertical[i-1]);
+            vertical[i-1][0] += diff;
+            i++;
+            vertical.insert(vertical.begin() + i, vertical[i]);
+            vertical[i+1][0] -= diff;
+            i++;
+        }
+    }
+    for (size_t i = 1; i < horizontal.size(); i++) {
+        float diff = cv::abs(horizontal[i][0] - horizontal[i-1][0]);
+        if (diff < 16.0f) {
+            if (horizontal[i-1][0] < 0) {
+                horizontal[i-1][0] = -horizontal[i-1][0];
+                horizontal[i-1][1] = horizontal[i-1][1] < CV_PI/2.0f ?
+                                                      horizontal[i-1][1] + CV_PI :
+                    horizontal[i-1][1] - CV_PI;
+            }
+            if (horizontal[i][0] < 0) {
+                horizontal[i][0] = -horizontal[i][0];
+                horizontal[i][1] = horizontal[i][1] < CV_PI/2.0f ?
+                                        horizontal[i][1] + CV_PI :
+                                        horizontal[i][1] - CV_PI;
+            }
+            horizontal[i-1][0] = (horizontal[i-1][0] + horizontal[i][0]) / 2.0f;
+            horizontal.erase(horizontal.begin() + i);
+        } else if (diff > 60.0f && diff < 76.0f) {
+            // one missing line
+            horizontal.insert(horizontal.begin() + i, horizontal[i]);
+            horizontal[i][0] -= diff;
+            i++;
+        } else if (diff > 90.0f && diff < 114.0f) {
+            // two missing lines
+            diff = diff/2.0f;
+            horizontal.insert(horizontal.begin() + i, horizontal[i-1]);
+            horizontal[i-1][0] += diff;
+            i++;
+            horizontal.insert(horizontal.begin() + i, horizontal[i]);
+            horizontal[i+1][0] -= diff;
+            i++;
+        }
     }
 
-    if (num_horizontal < 8) {
-        // same as above
-    } else {
-        // yup...
+    // sanity checks:
+    if (vertical.size() != 10 && horizontal.size() != 10) {
+#ifdef DEBUG
+        std::cout << "extractGrid: could not resolve lines\n";
+#endif
+        return grid;
     }
 
+    for (size_t i = 1; i < vertical.size(); i++) {
+        float diff = cv::abs(vertical[i][0] - vertical[i-1][0]);
+        if (diff > 38.0f || diff < 28.0f) {
+#ifdef DEBUG
+            std::cout << "Inappropriate grid gap\n";
+#endif
+            return grid;
+        }
+        diff = cv::abs(horizontal[i][0] - horizontal[i-1][0]);
+        if (diff > 38.0f || diff < 28.0f) {
+#ifdef DEBUG
+            std::cout << "Inappropriate grid gap\n";
+#endif
+            return grid;
+        }
+    }
+
+#ifdef DEBUG
+    std::cout << "Vertical lines:\n";
+    for (cv::Vec2f l : vertical) {
+        std::cout << l;
+    }
+    std::cout << "\n\n Horizontal lines:\n";
+    for (cv::Vec2f l : horizontal) {
+        std::cout << l;
+    }
+    std::cout << "\n\n\n";
+    cv::Mat img = cv::Mat::zeros(cv::Size(BOARDSIZE, BOARDSIZE), CV_8U);
+    for (size_t i = 0; i < vertical.size(); i++) {
+        cv::Vec2f ln = vertical[i];
+        float y = ln[0] / std::sin(ln[1]),
+            x = -1 / std::tan(ln[1]);
+        cv::line(img, cv::Point(0, y),
+                 cv::Point(img.cols, img.cols*x+y), CV_RGB(0,0,255));
+    }
+    for (size_t i = 0; i < horizontal.size(); i++) {
+        cv::Vec2f ln = horizontal[i];
+        // r = xcos(t) + ysin(t)
+        // x =    0: y =  r/sin(t)
+        float y = ln[0] / std::sin(ln[1]),
+            x = -1 / std::tan(ln[1]);
+        cv::line(img, cv::Point(0, y),
+                 cv::Point(img.cols, img.cols*x+y), CV_RGB(0,0,255));
+    }
+    img = img + 0.2*board;
+    cv::imshow("win", img);
+#endif
+    // find line intersections to get corners, and
+    // place in 10x10 grid;
+    // enure edges are present
     // loop over all boxes and template match I guess
+    cv::Point2f corners[4];
+    cv::Point2f corner_pts[4] = {{0, 0}, {0, 32}, {32, 32}, {32, 0}};
+    cv::Mat box;
+    cv::Matx33f H_;
+    cv::Mat win;
+    cv::createHanningWindow(win, cv::Size(32,32), CV_32F);
+    for (size_t i = 1; i < horizontal.size(); i++) {
+        for (size_t j = 1; j < vertical.size(); j++) {
+            corners[0] = getLineIntersection(vertical[j-1], horizontal[i-1]);
+            corners[1] = getLineIntersection(vertical[j-1], horizontal[i]);
+            corners[2] = getLineIntersection(vertical[j], horizontal[i]);
+            corners[3] = getLineIntersection(vertical[j], horizontal[i-1]);
+            std::cout << corners[0] << corners[1] << corners[2] << corners[3] << "\n";
+            H_ = cv::getPerspectiveTransform(corners, corner_pts);
+            cv::warpPerspective(board32f, box, H_, cv::Size(32,32), cv::INTER_LANCZOS4);
+            cv::threshold(box, box, 0.5, 1.0, cv::THRESH_BINARY_INV);
+            /* TODO: template match... */
+            cv::imshow("digit", box);
+            cv::waitKey(0);
+            std::cout << i << j << "\n";
+        }
+    }
 
     return grid;
 }
+
 
 /**
  * @brief  finds the intersection between two lines in Hough description
