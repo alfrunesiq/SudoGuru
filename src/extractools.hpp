@@ -9,6 +9,23 @@
 #include <unistd.h>
 #include <iostream>
 
+#define NET_INPUT_SIZE     32
+
+// TUNABLE PARAMETERS:
+#define DIGIT_MIN_AREA     64    // 8*8
+#define DIGIT_MAX_AREA     1156  // 34*34
+#define DIGIT_HEIGHT_MIN   8
+#define DIGIT_HEIGHT_MAX   28
+#define DIGIT_WIDTH_MIN    8
+#define DIGIT_WIDTH_MAX    28
+
+#define HOUGH_THRESHOLD    BOARDSIZE-100
+
+#define GRID_GAP_AVG       34
+#define GRID_GAP_MIN       28
+#define GRID_GAP_MAX       40
+
+
 /**
  * @brief  find biggest connected component whitin segmented image
  * TODO: Accelerated alternative: use flood fill from corner features to
@@ -46,7 +63,7 @@ public:
         std::string full_path = std::string(path);
         size_t idx = full_path.find("src");
         full_path.erase(full_path.begin() + idx, full_path.end());
-        full_path.append("src/nnr/digitNet.pb");
+        full_path.append("src/digitNet/digitNet.pb");
 
         net = cv::dnn::readNetFromTensorflow(full_path);
         if (net.empty()) {
@@ -86,6 +103,9 @@ public:
 private:
     cv::Vec2f grid[9][9];
     cv::dnn::Net net;
+    cv::Mat _3x3Cross = cv::getStructuringElement(cv::MORPH_CROSS,
+                                                  cv::Size(3,3));
+    std::vector<cv::Rect> findDigits(cv::Mat board_thr);
 };
 
 #endif /* _EXTRACT_GRID_H_ */

@@ -213,13 +213,10 @@ if __name__ == "__main__":
 
     # Counter for total number of iterations performed so far.
     total_iterations = 0
-    optimize(2000, session, optimizer, data, lr)
+    optimize(8000, session, optimizer, data, lr)
 
     print_test_accuracy()
     saver = tf.train.Saver()
-    saver.save(session, './saved_model')
-    graph = freeze_session(session)
-    tf.train.write_graph(graph, ".",
-                         'saved_model.pb', as_text=False)
+    saver.save(session, './digitNet')
 
     session.close()

@@ -86,14 +86,8 @@ int sudoguru (void)
                      cv::Point(frame_buf.cols, frame_buf.cols*x+y), CV_RGB(0,0,255));
         }
         if (edges.size() > 0) {
-            cv::Vec3f l1, l2, l3;
             pts = extractor->extractCorners(edges);
-//#ifdef DEBUG
-            // draw corners
-            cv::drawMarker(frame, pts[1], CV_RGB(255, 128, 0), cv::MARKER_DIAMOND);
-            cv::drawMarker(frame, pts[2], CV_RGB(255, 255, 56), cv::MARKER_DIAMOND);
-            cv::drawMarker(frame, pts[0], CV_RGB(56, 128, 255), cv::MARKER_DIAMOND);
-            cv::drawMarker(frame, pts[3], CV_RGB(230, 57, 255), cv::MARKER_DIAMOND);
+#ifdef DEBUG
             // draw lines
             for (unsigned int i = 0; i < 4; i++) {
                 if (edges[i][1] != 0) {
@@ -103,21 +97,25 @@ int sudoguru (void)
                              cv::Point(frame_buf.cols, frame_buf.cols*x+y), CV_RGB(0,0,255));
                 }
             }
-
+#endif
             std::vector<cv::Point2f> p = {cv::Point2f(0.0f,0.0f),
                                           cv::Point2f(BOARDSIZE,0.0f),
                                           cv::Point2f(BOARDSIZE,BOARDSIZE),
                                           cv::Point2f(0.0f,BOARDSIZE)};
-            cv::Mat H = cv::getPerspectiveTransform(pts, p);
-            if (H.rows == 3) {
-                cv::warpPerspective(frame, prspct, H,
-                                    cv::Size(BOARDSIZE,BOARDSIZE),
-                                    cv::INTER_LINEAR);
-                extractor->extractGrid(prspct);
-                cv::imshow("Perspective", prspct);
-            }
+            cv::Matx33f H = cv::getPerspectiveTransform(pts, p);
+            cv::warpPerspective(frame, prspct, H,
+                                cv::Size(BOARDSIZE,BOARDSIZE),
+                                cv::INTER_LINEAR);
+            extractor->extractGrid(prspct);
+            cv::imshow("Perspective", prspct);
+
+            // draw markers for points used in transform
+            cv::drawMarker(frame, pts[1], CV_RGB(255, 128, 0), cv::MARKER_DIAMOND);
+            cv::drawMarker(frame, pts[2], CV_RGB(255, 255, 56), cv::MARKER_DIAMOND);
+            cv::drawMarker(frame, pts[0], CV_RGB(56, 128, 255), cv::MARKER_DIAMOND);
+            cv::drawMarker(frame, pts[3], CV_RGB(230, 57, 255), cv::MARKER_DIAMOND);
         }
-//#endif
+
         cv::imshow("cam0", frame);
 #ifdef DEBUG
         auto t2 = std::chrono::high_resolution_clock::now();
