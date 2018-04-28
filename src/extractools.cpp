@@ -75,8 +75,7 @@ std::vector<cv::Vec2f> bundleHough (std::vector<cv::Vec2f> hough,
         cv::Vec2f mean;
         for (size_t i = 0; i < par.size(); i++) {
             if (par[i][0] < 0) {
-                par[i][1] = (par[i][1] > 3.0f*CV_PI/4.0f) ? par[i][1] - CV_PI :
-                                                            par[i][1] + CV_PI;
+                par[i][1] = par[i][1] + CV_PI;
                 par[i][0] = -par[i][0];
             }
             mean += par[i];
@@ -89,7 +88,7 @@ std::vector<cv::Vec2f> bundleHough (std::vector<cv::Vec2f> hough,
     return ret;
 }
 
-std::vector<cv::Vec2f> extractEdges (cv::Mat img_thr)
+std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
 {
     cv::HoughLines(img_thr, lines, 1, CV_PI/180, 100);
     /*
@@ -193,7 +192,7 @@ std::vector<cv::Vec2f> extractEdges (cv::Mat img_thr)
     return edges;
 }
 
-std::vector<cv::Point2f> extractCorners (std::vector<cv::Vec2f> edges)
+std::vector<cv::Point2f> Extractor::extractCorners (std::vector<cv::Vec2f> edges)
 {
     std::vector<cv::Point2f> pts;
     std::vector<cv::Point2f> ret;
@@ -239,16 +238,20 @@ std::vector<cv::Point2f> extractCorners (std::vector<cv::Vec2f> edges)
     return ret;
 }
 
+/**
+ *  @brief simple comparison of rho values used for std::sort
+ */
 static bool compRho(cv::Vec2f l1, cv::Vec2f l2) {
     return (l1[0] < l2[0]);
 }
+
 
 /**
  * @brief  attempts to extract the 9x9 sudokugrid
  * @param board   image of segmented board
  * @return        9x9 matrix of digits.
  */
-std::vector<std::vector<int>> extractGrid (cv::Mat board) {
+std::vector<std::vector<int>> Extractor::extractGrid (cv::Mat board) {
     cv::Mat buf;
     std::vector<std::vector<int>> grid;
     cv::cvtColor(board, board, cv::COLOR_BGR2GRAY);
@@ -379,14 +382,14 @@ std::vector<std::vector<int>> extractGrid (cv::Mat board) {
         float diff = cv::abs(vertical[i][0] - vertical[i-1][0]);
         if (diff > 38.0f || diff < 28.0f) {
 #ifdef DEBUG
-            std::cout << "Inappropriate grid gap\n";
+            std::cout << "Grid gaps doesn't fit model\n";
 #endif
             return grid;
         }
         diff = cv::abs(horizontal[i][0] - horizontal[i-1][0]);
         if (diff > 38.0f || diff < 28.0f) {
 #ifdef DEBUG
-            std::cout << "Inappropriate grid gap\n";
+            std::cout << "Grid gaps doesn't fit model\n";
 #endif
             return grid;
         }
@@ -412,8 +415,6 @@ std::vector<std::vector<int>> extractGrid (cv::Mat board) {
     }
     for (size_t i = 0; i < horizontal.size(); i++) {
         cv::Vec2f ln = horizontal[i];
-        // r = xcos(t) + ysin(t)
-        // x =    0: y =  r/sin(t)
         float y = ln[0] / std::sin(ln[1]),
             x = -1 / std::tan(ln[1]);
         cv::line(img, cv::Point(0, y),
@@ -427,25 +428,31 @@ std::vector<std::vector<int>> extractGrid (cv::Mat board) {
     // enure edges are present
     // loop over all boxes and template match I guess
     cv::Point2f corners[4];
-    cv::Point2f corner_pts[4] = {{0, 0}, {0, 32}, {32, 32}, {32, 0}};
-    cv::Mat box;
+    cv::Point2f corner_pts[4] = {{0, 0}, {0, 48}, {48, 48}, {48, 0}};
+    cv::Mat box, box_cropped;
     cv::Matx33f H_;
-    cv::Mat win;
-    cv::createHanningWindow(win, cv::Size(32,32), CV_32F);
+    cv::Mat blob, one_hot;
     for (size_t i = 1; i < horizontal.size(); i++) {
         for (size_t j = 1; j < vertical.size(); j++) {
+            // get grid intersections
             corners[0] = getLineIntersection(vertical[j-1], horizontal[i-1]);
             corners[1] = getLineIntersection(vertical[j-1], horizontal[i]);
             corners[2] = getLineIntersection(vertical[j], horizontal[i]);
             corners[3] = getLineIntersection(vertical[j], horizontal[i-1]);
-            std::cout << corners[0] << corners[1] << corners[2] << corners[3] << "\n";
+
+            // extract boxes and crop
             H_ = cv::getPerspectiveTransform(corners, corner_pts);
-            cv::warpPerspective(board32f, box, H_, cv::Size(32,32), cv::INTER_LANCZOS4);
-            cv::threshold(box, box, 0.5, 1.0, cv::THRESH_BINARY_INV);
-            /* TODO: template match... */
+            cv::warpPerspective(board32f, box, H_, cv::Size(48,48), cv::INTER_LANCZOS4);
+            cv::minMaxLoc(box, &min, &max);
+            box = (box - min)/(max-min); //normalize and invert (network trained on mnist)
+            box_cropped = 1.0f - box(cv::Rect(cv::Point2i(8, 8), cv::Point2i(40,40)));
+            cv::dnn::blobFromImage(box_cropped, blob, 1.0, cv::Size(32, 32));
+            net.setInput(blob);
+            one_hot = net.forward();
+            std::cout << one_hot << "\n";
             cv::imshow("digit", box);
+            cv::imshow("digit_cropped", box_cropped);
             cv::waitKey(0);
-            std::cout << i << j << "\n";
         }
     }
 

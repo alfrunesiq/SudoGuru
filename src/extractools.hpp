@@ -3,31 +3,11 @@
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/calib3d/calib3d.hpp>
-
-
-/**
- * @brief  extracts outermost edges in segmented plane
- * @param  img_thr  thresholded image containing plane edges
- * @return vector with (rho, theta) Hough lines
- */
-std::vector<cv::Vec2f> extractEdges (cv::Mat img_thr);
-
-/**
- * @brief  extracts corners where the four lines intersects
- * @param  edges   edge lines
- * @return intersecting points in orientation preserving order
- */
-std::vector<cv::Point2f> extractCorners (std::vector<cv::Vec2f> edges);
-
-/**
- * @brief  attempts to extract the 9x9 sudokugrid
- * TODO: As an initial attempt; try to use normalized cross correlation (template matching)
- * with (blurred) skeleton digit images. (first check if empty)
- * @param board   image of segmented board
- * @return        9x9 matrix of digits.
- */
-std::vector<std::vector<int>> extractGrid (cv::Mat board);
+#include <opencv2/calib3d.hpp>
+#include <opencv2/dnn.hpp>
+#include <stdio.h>
+#include <unistd.h>
+#include <iostream>
 
 /**
  * @brief  find biggest connected component whitin segmented image
@@ -57,5 +37,55 @@ cv::Point2f getLineIntersection(cv::Vec2f rt1, cv::Vec2f rt2);
  */
 std::vector<cv::Vec2f> bundleHough (std::vector<cv::Vec2f> hough,
                                     float thresh_rho, float thresh_theta);
+class Extractor
+{
+public:
+    Extractor() {
+        char path[258] = {0};
+        getcwd(path, 258);
+        std::string full_path = std::string(path);
+        size_t idx = full_path.find("src");
+        full_path.erase(full_path.begin() + idx, full_path.end());
+        full_path.append("src/nnr/digitNet.pb");
+
+        net = cv::dnn::readNetFromTensorflow(full_path);
+        if (net.empty()) {
+            printf("ERROR: Network empty: \"%s\"", full_path.c_str());
+            throw std::exception();
+        }
+    }
+    Extractor(std::string pathToTfProto) {
+        net = cv::dnn::readNetFromTensorflow(pathToTfProto);
+    }
+    ~Extractor() {}
+
+
+/**
+ * @brief  extracts outermost edges in segmented plane
+ * @param  img_thr  thresholded image containing plane edges
+ * @return vector with (rho, theta) Hough lines
+ */
+    std::vector<cv::Vec2f> extractEdges (cv::Mat img_thr);
+
+/**
+ * @brief  extracts corners where the four lines intersects
+ * @param  edges   edge lines
+ * @return intersecting points in orientation preserving order
+ */
+    std::vector<cv::Point2f> extractCorners (std::vector<cv::Vec2f> edges);
+
+/**
+ * @brief  attempts to extract the 9x9 sudokugrid
+ * TODO: As an initial attempt; try to use normalized cross correlation (template matching)
+ * with (blurred) skeleton digit images. (first check if empty)
+ * @param board   image of segmented board
+ * @return        9x9 matrix of digits.
+ */
+    std::vector<std::vector<int>> extractGrid (cv::Mat board);
+
+private:
+    cv::Vec2f grid[9][9];
+    cv::dnn::Net net;
+};
 
 #endif /* _EXTRACT_GRID_H_ */

@@ -8,6 +8,7 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
+#include <opencv2/dnn/dnn.hpp>
 
 #include "extractools.hpp"
 
@@ -17,7 +18,7 @@
 #endif
 
 #ifndef CAMERA_ID_0
-  #define CAMERA_ID_0 2
+  #define CAMERA_ID_0 0
 #endif
 
 #define BOARDSIZE    9*34 // roughly 32x32 per box

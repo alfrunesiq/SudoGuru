@@ -1,4 +1,5 @@
 #include "sudoguru.hpp"
+#include "extractools.hpp"
 
 int sudoguru (void)
 {
@@ -9,6 +10,7 @@ int sudoguru (void)
     cv::namedWindow("Corner", cv::WINDOW_AUTOSIZE);
 #endif
     cv::VideoCapture cap;
+    Extractor *extractor = new Extractor;
     if (!cap.open(CAMERA_ID_0)) {
         std::cerr << "sudoguru.cpp: Could not open camera " << CAMERA_ID_0 << "\n";
         return EXIT_FAILURE;
@@ -35,6 +37,7 @@ int sudoguru (void)
     // Corner points and edge lines
     std::vector<cv::Point2f> pts;
     std::vector<cv::Vec2f> edges;
+
 
     for (;;)
     {
@@ -74,7 +77,7 @@ int sudoguru (void)
         cv::minMaxLoc(buf[0], &min, &max);
         cv::threshold(buf[0], buf[0], 0.8*max, 255, cv::THRESH_BINARY);*/
 
-        edges = extractEdges(frame_buf);
+        edges = extractor->extractEdges(frame_buf);
 
         for (cv::Vec2f edge : edges) {
             float y = edge[0] / std::sin(edge[1]),
@@ -84,7 +87,7 @@ int sudoguru (void)
         }
         if (edges.size() > 0) {
             cv::Vec3f l1, l2, l3;
-            pts = extractCorners(edges);
+            pts = extractor->extractCorners(edges);
 //#ifdef DEBUG
             // draw corners
             cv::drawMarker(frame, pts[1], CV_RGB(255, 128, 0), cv::MARKER_DIAMOND);
@@ -110,7 +113,7 @@ int sudoguru (void)
                 cv::warpPerspective(frame, prspct, H,
                                     cv::Size(BOARDSIZE,BOARDSIZE),
                                     cv::INTER_LINEAR);
-                extractGrid(prspct);
+                extractor->extractGrid(prspct);
                 cv::imshow("Perspective", prspct);
             }
         }

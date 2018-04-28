@@ -4,3 +4,9 @@ src/sudokusolver/test*
 src/build
 state-machine.*
 *.html
+src/digitNet/*.meta
+src/digitNet/*.data*
+src/digitNet/*.index
+*__pycache__
+*checkpoint
+
