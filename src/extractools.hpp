@@ -15,9 +15,9 @@
 #define DIGIT_MIN_AREA     64    // 8*8
 #define DIGIT_MAX_AREA     1156  // 34*34
 #define DIGIT_HEIGHT_MIN   8
-#define DIGIT_HEIGHT_MAX   28
+#define DIGIT_HEIGHT_MAX   30
 #define DIGIT_WIDTH_MIN    8
-#define DIGIT_WIDTH_MAX    28
+#define DIGIT_WIDTH_MAX    30
 
 #define HOUGH_THRESHOLD    BOARDSIZE-100
 

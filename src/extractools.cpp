@@ -3,6 +3,7 @@
 #include <iostream>
 #include <stdio.h>
 #include <ctime>
+#include <chrono>
 
 static std::vector<cv::Scalar> map = {
     CV_RGB(142, 69, 19), // 1
@@ -18,6 +19,13 @@ static std::vector<cv::Scalar> map = {
 };
 static cv::Mat lbl, stats, centroids;
 std::vector<cv::Vec2f> lines;
+
+// TODO: Remove this:
+static int counter = 0;
+static std::string path = "/tmp/English/";
+static time_t now =std::chrono::system_clock::to_time_t(
+    std::chrono::system_clock::now());
+// TODO END
 
 /**
  * @brief  find biggest connected component whitin segmented image
@@ -308,10 +316,10 @@ std::vector<cv::Rect> Extractor::findDigits(cv::Mat board_thr)
             continue;
         } else {
             // add border around box
-            boundingBox.width  += 12;
-            boundingBox.height += 8;
-            boundingBox.x      -= 6;
-            boundingBox.y      -= 4;
+            boundingBox.width  += 10;
+            boundingBox.height += 6;
+            boundingBox.x      -= 5;
+            boundingBox.y      -= 3;
             boundingBox &= brd_rect;
             digits.push_back(boundingBox);
         }
@@ -510,12 +518,25 @@ std::vector<std::vector<int>> Extractor::extractGrid (cv::Mat board) {
     cv::cvtColor(buf, buf_col, cv::COLOR_GRAY2BGR);
     cv::Mat croped, croped32f, input_img, blob, out;
     int argmax[2];
+    // TODO: REMOVE THIS:
+    char cbuf[128];
+
+    // TODO END
     for (cv::Rect digit : digits) {
         croped = buf(digit);
         cv::resize(croped, input_img, cv::Size(NET_INPUT_SIZE, NET_INPUT_SIZE));
         cv::dnn::blobFromImage(input_img, blob, 1.0, cv::Size(32,32));
         net.setInput(blob);
         out = net.forward();
+        // TODO: REMOVE THIS:
+        cv::imshow("digit", input_img);
+        cbuf[0] = static_cast<char>(cv::waitKey(0));
+        sprintf(cbuf+1, "%ld_%d.png",(long) now, counter++);
+        std::string filename = path;
+        filename.append(std::string(cbuf));
+        std::cout << filename << "\n";
+        cv::imwrite(filename, input_img);
+        // TODO END
         cv::minMaxIdx(out.reshape(1), 0, 0, 0, argmax);
         cv::rectangle(buf_col, digit, map[argmax[1]], 1);
     }

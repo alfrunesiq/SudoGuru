@@ -1,222 +1,119 @@
-from tensorflow.examples.tutorials.mnist import input_data
 import os
+import sys
+
 import numpy as np
 import tensorflow as tf
 import cv2 as cv
+from tensorflow.examples.tutorials.mnist import input_data
 
-FLAGS = tf.app.flags.FLAGS
-def freeze_session(session, keep_var_names=None, output_names=None, clear_devices=True):
-    """
-    Freezes the state of a session into a pruned computation graph.
+num_epochs = 500
+batch_size = 2096
+lr = 1.0
 
-    Creates a new computation graph where variable nodes are replaced by
-    constants taking their current value in the session. The new graph will be
-    pruned so subgraphs that are not necessary to compute the requested
-    outputs are removed.
-    @param session The TensorFlow session to be frozen.
-    @param keep_var_names A list of variable names that should not be frozen,
-                          or None to freeze all the variables in the graph.
-    @param output_names Names of the relevant graph outputs.
-    @param clear_devices Remove the device directives from the graph for better portability.
-    @return The frozen graph definition.
-    """
-    from tensorflow.python.framework.graph_util import convert_variables_to_constants
-    graph = session.graph
-    with graph.as_default():
-        freeze_var_names = list(set(v.op.name for v in tf.global_variables()).difference(keep_var_names or []))
-        output_names = output_names or []
-        output_names += [v.op.name for v in tf.global_variables()]
-        input_graph_def = graph.as_graph_def()
-        if clear_devices:
-            for node in input_graph_def.node:
-                node.device = ""
-        frozen_graph = convert_variables_to_constants(session, input_graph_def,
-                                                      output_names, freeze_var_names)
-        return frozen_graph
 
-def optimize(num_iterations, session, optimizer, data, lr):
-    # Ensure we update the global variable rather than a local copy.
-    global total_iterations
+img_size     = 32
+num_channels = 1
+num_classes  = 9   # 0-9 in this case
 
-    for i in range(total_iterations,
-                   total_iterations + num_iterations):
 
-        # Get a batch of training examples.
-        # x_batch now holds a batch of images and
-        # y_true_batch are the true labels for those images.
-        x_batch, y_true_batch = data.train.next_batch(train_batch_size)
-        # Put the batch into a dict with the proper names
-        # for placeholder variables in the TensorFlow graph.
-        if i % 1000 == 0:
-            lr = 0.5*lr
+x_train = np.load("/tmp/English/digits_img.npy")
+y_train_cls = np.load("/tmp/English/digits_lbl.npy")
+# Translate to one-hot
+y_train_true = np.zeros((x_train.shape[0], 9), dtype=np.float)
+y_train_true[np.arange(x_train.shape[0]),y_train_cls-1] = 1.0
 
-        feed_dict_train = {x_image: x_batch.reshape(train_batch_size,
-                                                    28, 28, 1),
+if (len(sys.argv) > 1 and sys.argv[1] == "mnist"):
+    data = input_data.read_data_sets("/tmp/mnist/")
+    ## Train on it ALL!!!!
+    for data_set in [data.train, data.test, data.validation]:
+        mnist_train = data_set.images[data_set.labels != 0].reshape(-1, 28, 28)
+        mnist_train_ext = np.zeros((mnist_train.shape[0], 32, 32), dtype=np.float32)
+        mnist_train_ext[:,2:30, 2:30] = mnist_train
+        mnist_train_one_hot = np.zeros((mnist_train.shape[0], num_classes), dtype=np.float32)
+        mnist_train_one_hot[np.arange(mnist_train.shape[0]), data_set.labels[data_set.labels!=0]-1] = 1.0
+        y_train_cls = np.concatenate([y_train_cls, data_set.labels[data_set.labels != 0]], axis=0)
+        x_train = np.concatenate([x_train, mnist_train_ext], axis=0)
+        y_train_true = np.concatenate([y_train_true, mnist_train_one_hot], axis=0)
+
+print("Training set size: %d" % x_train.shape[0])
+x = tf.placeholder(tf.float32, shape=[None, img_size, img_size, num_channels], name='x')
+y_true = tf.placeholder(tf.float32, shape=[None, num_classes], name='y_true')
+y_true_cls = tf.argmax(y_true, axis=1)
+
+net1    = tf.layers.conv2d(inputs=x, name="layer_conv1", padding="valid",
+                           filters=24, kernel_size=5, activation=tf.nn.relu)
+print(net1.get_shape().as_list())
+net1p   = tf.layers.max_pooling2d(inputs=net1, name="layer_pool1", pool_size=2, strides=2)
+net2    = tf.layers.conv2d(inputs=net1p, name="layer_conv2", padding="valid",
+                           filters=36, kernel_size=5, activation=tf.nn.relu)
+print(net2.get_shape().as_list())
+net2p   = tf.layers.max_pooling2d(inputs=net2, name="layer_pool2", pool_size=2, strides=2)
+net3    = tf.layers.conv2d(inputs=net2p, name="layer_conv3", padding="valid",
+                           filters=256, kernel_size=5, activation=tf.nn.relu)
+print(net3.get_shape().as_list())
+flatten = tf.reshape(net3, [-1, np.prod(net3.get_shape().as_list()[1:])])
+fc1     = tf.layers.dense(inputs=flatten, name="layer_fc1", units=128, activation=tf.nn.relu)
+logits  = tf.layers.dense(inputs=fc1, name="layer_fc2", units=num_classes, activation=None)
+
+y_pred     = tf.nn.softmax(logits=logits, name="y_pred")
+y_pred_cls = tf.argmax(y_pred, axis=1)
+
+cross_entropy = tf.nn.softmax_cross_entropy_with_logits(labels=y_true, logits=logits)
+regularizer   = tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_fc1/kernel:0'))
+regularizer  += tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_fc2/kernel:0'))
+regularizer  += 0.1*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_conv1/kernel:0'))
+regularizer  += 0.1*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_conv2/kernel:0'))
+regularizer  += 0.1*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_conv3/kernel:0'))
+
+
+
+
+loss = tf.reduce_mean(cross_entropy) + regularizer
+learning_rate = tf.placeholder(tf.float32, shape=[])
+optimizer = tf.train.AdadeltaOptimizer(learning_rate=learning_rate).minimize(loss)
+accuracy = tf.reduce_mean(tf.cast(tf.equal(y_pred_cls, y_true_cls), tf.float32))
+
+session = tf.Session()
+session.run(tf.global_variables_initializer())
+
+## Train network:
+num_samples = x_train.shape[0]
+a_range = np.arange(num_samples)
+
+print(x_train.shape)
+for i in range(num_epochs):
+    if i % 30 == 29:
+        lr /= 2.0
+
+    if i == 150:
+        lr = 1.0
+
+    j = 0
+    a_range = np.random.choice(a_range, num_samples, replace=False)
+    while(j <= num_samples):
+        # Draw a random sample from batch
+        k = min(j+batch_size, num_samples)
+        x_batch = x_train[a_range[j:k],:,:]
+        y_true_batch = y_train_true[a_range[j:k],:]
+
+        # inject noise (regularization)
+        if i > 200:
+            x_batch = np.clip((x_batch + 0.01*np.random.randn(*x_batch.shape)), 0.0, 1.0)
+
+        # Create feeddict
+        feed_dict_train = {x: x_batch.reshape((-1, 32, 32, 1)),
                            y_true: y_true_batch,
                            learning_rate: lr}
-
-        # Run the optimizer using this batch of training data.
-        # TensorFlow assigns the variables in feed_dict_train
-        # to the placeholder variables and then runs the optimizer.
         session.run(optimizer, feed_dict=feed_dict_train)
+        j += batch_size
 
-        # Print status every 100 iterations.
-        if i % 100 == 0:
-            # Calculate the accuracy on the training-set.
-            acc = session.run(accuracy, feed_dict=feed_dict_train)
-
-            # Message for printing.
-            msg = "Optimization Iteration: {0:>6}, Training Accuracy: {1:>6.1%}"
-
-            # Print it.
-            print(msg.format(i + 1, acc))
-
-    # Update the total number of iterations performed.
-    total_iterations += num_iterations
+    # Report accuracy
+    acc = session.run(accuracy, feed_dict=feed_dict_train)
+    msg = "Iteration: %04d | Training Accuracy: %02.2f" % (i, acc*100)
+    print(msg)
 
 
-def print_test_accuracy(show_example_errors=False,
-                        show_confusion_matrix=False):
+saver = tf.train.Saver()
+saver.save(session, './digitNet')
 
-    test_batch_size = 256
-
-    # Number of images in the test-set.
-    num_test = len(data.test.images)
-
-    # Allocate an array for the predicted classes which
-    # will be calculated in batches and filled into this array.
-    cls_pred = np.zeros(shape=num_test, dtype=np.int)
-
-    # The starting index for the next batch is denoted i.
-    i = 0
-
-    while i < num_test:
-        # The ending index for the next batch is denoted j.
-        j = min(i + test_batch_size, num_test)
-
-        # Get the images from the test-set between index i and j.
-        images = data.test.images[i:j, :]
-
-        # Get the associated labels.
-        labels = data.test.labels[i:j, :]
-
-        # Create a feed-dict with these images and labels.
-        feed_dict = {x_image: images.reshape(j-i, 28, 28, 1),
-                     y_true: labels}
-
-        # Calculate the predicted class using TensorFlow.
-        cls_pred[i:j] = session.run(y_pred_cls, feed_dict=feed_dict)
-
-        # Set the start-index for the next batch to the
-        # end-index of the current batch.
-        i = j
-
-    # Convenience variable for the true class-numbers of the test-set.
-    cls_true = np.argmax(data.test.labels, axis=1)
-    print(cls_true)
-    print(cls_pred)
-    # Create a boolean array whether each image is correctly classified.
-    correct = (cls_true == cls_pred)
-
-    # Calculate the number of correctly classified images.
-    # When summing a boolean array, False means 0 and True means 1.
-    correct_sum = correct.sum()
-
-    # Classification accuracy is the number of correctly classified
-    # images divided by the total number of images in the test-set.
-    acc = float(correct_sum) / num_test
-
-    # Print the accuracy.
-    msg = "Accuracy on Test-Set: {0:.1%} ({1} / {2})"
-    print(msg.format(acc, correct_sum, num_test))
-
-    # Plot some examples of mis-classifications, if desired.
-    if show_example_errors:
-        print("Example errors:")
-        plot_example_errors(cls_pred=cls_pred, correct=correct)
-
-    # Plot the confusion matrix, if desired.
-    if show_confusion_matrix:
-        print("Confusion Matrix:")
-        plot_confusion_matrix(cls_pred=cls_pred)
-
-
-if __name__ == "__main__":
-    # We know that MNIST images are 28 pixels in each dimension.
-    img_size = 28
-
-    # Images are stored in one-dimensional arrays of this length.
-    img_size_flat = img_size * img_size
-
-    # Tuple with height and width of images used to reshape arrays.
-    img_shape = (img_size, img_size)
-
-    # Number of colour channels for the images: 1 channel for gray-scale.
-    num_channels = 1
-
-    # Number of classes, one class for each of 10 digits.
-    num_classes = 10
-    data = input_data.read_data_sets('/tmp/mnist', one_hot=True)
-    print("Size of:")
-    print("- Training-set:\t\t{}".format(len(data.train.labels)))
-    print("- Test-set:\t\t{}".format(len(data.test.labels)))
-    print("- Validation-set:\t{}".format(len(data.validation.labels)))
-
-    data.test.cls = np.argmax(data.test.labels, axis=1)
-    # Get the first images from the test-set.
-    images = data.test.images[0:9]
-    # Get the true classes for those images.
-
-    x_image = tf.placeholder(tf.float32, shape=[None, img_size, img_size, num_channels], name='x')
-    y_true = tf.placeholder(tf.float32, shape=[None, num_classes], name='y_true')
-    y_true_cls = tf.argmax(y_true, axis=1)
-
-
-    net = x_image
-    net = tf.layers.conv2d(inputs=net, name='layer_conv1', padding='same',
-    filters=16, kernel_size=5, activation=tf.nn.relu)
-    net = tf.layers.max_pooling2d(inputs=net, pool_size=2, strides=2)
-    net = tf.layers.conv2d(inputs=net, name='layer_conv2', padding='same',
-                       filters=36, kernel_size=5, activation=tf.nn.relu)
-    net = tf.layers.max_pooling2d(inputs=net, pool_size=2, strides=2)
-    net = tf.reshape(net, [-1, np.prod(net.get_shape().as_list()[1:])])
-    #net = tf.layers.flatten(net)
-
-    net = tf.layers.dense(inputs=net, name='layer_fc1',
-    units=128, activation=tf.nn.relu)
-
-    net = tf.layers.dense(inputs=net, name='layer_fc_out',
-                      units=num_classes, activation=None)
-    logits = net
-    y_pred = tf.nn.softmax(logits=logits, name="y_pred")
-
-    y_pred_cls = tf.argmax(y_pred, axis=1)
-
-    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(labels=y_true, logits=logits)
-    regularizer = tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_fc_out/kernel:0'))
-
-    regularizer += tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_fc1/kernel:0'))
-
-    loss = tf.reduce_mean(cross_entropy) + regularizer
-    lr = 1.0
-    learning_rate = tf.placeholder(tf.float32, shape=[])
-    optimizer = tf.train.AdadeltaOptimizer(learning_rate=learning_rate).minimize(loss)
-
-    correct_prediction = tf.equal(y_pred_cls, y_true_cls)
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-
-    train_batch_size = 64
-    session = tf.Session(config =tf.ConfigProto(
-        device_count = {'GPU': 0}
-    ))
-    session.run(tf.global_variables_initializer())
-
-    # Counter for total number of iterations performed so far.
-    total_iterations = 0
-    optimize(8000, session, optimizer, data, lr)
-
-    print_test_accuracy()
-    saver = tf.train.Saver()
-    saver.save(session, './digitNet')
-
-    session.close()
+session.close()
