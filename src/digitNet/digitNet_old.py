@@ -1,3 +1,10 @@
+"""
+This was my initial attempt of creating a digit classifier
+
+The network is primarily inspired by Hvass Laboratories'
+mnist classifier network 
+(https://github.com/Hvass-Labs/TensorFlow-Tutorials/blob/master/03B_Layers_API.ipynb)
+"""
 from tensorflow.examples.tutorials.mnist import input_data
 import os
 import numpy as np

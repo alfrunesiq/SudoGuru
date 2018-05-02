@@ -5,25 +5,27 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/dnn.hpp>
+#include <vector>
+
 #include <stdio.h>
 #include <unistd.h>
-#include <iostream>
 
 #define NET_INPUT_SIZE     32
+#define CONFIDENCE_THRESH  0.8
 
 // TUNABLE PARAMETERS:
-#define DIGIT_MIN_AREA     64    // 8*8
+#define DIGIT_MIN_AREA     82
 #define DIGIT_MAX_AREA     1156  // 34*34
-#define DIGIT_HEIGHT_MIN   8
+#define DIGIT_HEIGHT_MIN   7
 #define DIGIT_HEIGHT_MAX   30
-#define DIGIT_WIDTH_MIN    8
+#define DIGIT_WIDTH_MIN    7
 #define DIGIT_WIDTH_MAX    30
 
 #define HOUGH_THRESHOLD    BOARDSIZE-100
 
 #define GRID_GAP_AVG       34
-#define GRID_GAP_MIN       28
-#define GRID_GAP_MAX       40
+#define GRID_GAP_MIN       27
+#define GRID_GAP_MAX       42
 
 
 /**
@@ -70,6 +72,13 @@ public:
             printf("ERROR: Network empty: \"%s\"", full_path.c_str());
             throw std::exception();
         }
+
+        for (int i = 0; i < 9; i++) {
+            grid.push_back(std::vector<int>());
+            for (int j = 0; j < 9; j++) {
+                grid[i].push_back(0);
+            }
+        }
     }
     Extractor(std::string pathToTfProto) {
         net = cv::dnn::readNetFromTensorflow(pathToTfProto);
@@ -93,18 +102,21 @@ public:
 
 /**
  * @brief  attempts to extract the 9x9 sudokugrid
- * TODO: As an initial attempt; try to use normalized cross correlation (template matching)
  * with (blurred) skeleton digit images. (first check if empty)
  * @param board   image of segmented board
  * @return        9x9 matrix of digits.
  */
-    std::vector<std::vector<int>> extractGrid (cv::Mat board);
+    std::vector<std::vector<int>> *extractGrid (cv::Mat board);
 
 private:
-    cv::Vec2f grid[9][9];
+    // net: imported tensorflow classifier
     cv::dnn::Net net;
+    // grid: grid placeholder reference returned in extractGrid()
+    std::vector<std::vector<int>> grid;
+
     cv::Mat _3x3Cross = cv::getStructuringElement(cv::MORPH_CROSS,
                                                   cv::Size(3,3));
+
     std::vector<cv::Rect> findDigits(cv::Mat board_thr);
 };
 

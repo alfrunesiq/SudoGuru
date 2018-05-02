@@ -21,16 +21,15 @@ void ticket_group::add_member(Ticket *t) {
 }
 
 void Ticket::set_value(int val) {
-    if (!fixed) {
-        value = val;
-    }
+    value = val;
 }
 
-void Ticket::get_possible_values(std::vector<int> &ret)
+std::vector<int> Ticket::get_possible_values()
 {
+    std::vector<int> ret;
     if (fixed) {
         ret.push_back(value);
-        return;
+        return ret;
     }
     for (int i = 9; i >= 1; i--) {
         if (!row->contains(i) &&
@@ -39,9 +38,10 @@ void Ticket::get_possible_values(std::vector<int> &ret)
             ret.push_back(i);
         }
     }
+    return ret;
 }
 
-Board::Board(int **grid)
+Board::Board()
 {
     for (int i = 0; i < 9; i++) {
         rows.push_back(Row());
@@ -58,11 +58,10 @@ Board::Board(int **grid)
 
     for (int i = 0; i < 9; i++) {
         for (int j = 0; j < 9; j++) {
-            bool fixed = grid[i][j] == 0 ? false : true;
-            Ticket *t = new Ticket(grid[i][j], 
-                            &rows.at(i), &cols.at(j), 
-                            &boxes.at(i/3).at(j/3), 
-                            fixed);
+            Ticket *t = new Ticket(0,
+                            &rows.at(i), &cols.at(j),
+                            &boxes.at(i/3).at(j/3),
+                            false);
             board.at(i).push_back(t);
             rows.at(i).add_member(t);
             cols.at(j).add_member(t);
@@ -71,11 +70,47 @@ Board::Board(int **grid)
     }
 }
 
+
+void Board::setBoard(std::vector<std::vector<int>> newBoard) {
+    if (newBoard.size() != 9 || newBoard[0].size() != 9) {
+        return;
+    }
+    for (int i = 0; i < 9; i++) {
+        for (int j = 0; j < 9; j++) {
+            if (newBoard[i][j] == 0) {
+                board[i][j]->set_value(0);
+                board[i][j]->set_fixed(false);
+            } else {
+                board[i][j]->set_value(newBoard[i][j]);
+                board[i][j]->set_fixed(true);
+            }
+        }
+    }
+}
+
+void Board::setBoard(std::vector<std::vector<int>> *newBoard) {
+    if ((*newBoard).size() != 9 || (*newBoard)[0].size() != 9) {
+        return;
+    }
+    for (int i = 0; i < 9; i++) {
+        for (int j = 0; j < 9; j++) {
+            if ((*newBoard)[i][j] == 0) {
+                board[i][j]->set_value(0);
+                board[i][j]->set_fixed(false);
+            } else {
+                board[i][j]->set_value((*newBoard)[i][j]);
+                board[i][j]->set_fixed(true);
+            }
+        }
+    }
+}
+
+
 Ticket *Board::getFirstNonFixed() {
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 8; j++) {
-            if (!board.at(i).at(j)->is_fixed()) {
-                return board.at(i).at(j);
+            if (!board[i][j]->is_fixed()) {
+                return board[i][j];
             }
         }
     }
@@ -84,14 +119,15 @@ Ticket *Board::getFirstNonFixed() {
 
 /**
  * Board::solve
- * solves the containting sudoku and returns 
+ * solves the containting sudoku and returns
  * a c-type 9x9 array with the solution
  * the method is brute-force, and selects the first
  * solution it comes across. It is not fool-proof, so
- * a maximum number of iterations is defined. 
+ * a maximum number of iterations is defined.
  * @return solution (9x9 array)
  */
-int **Board::solve()
+std::vector<std::vector<int>> *Board::solve(
+    std::vector<std::vector<int>> *brd)
 {
     int i = 0, j = 0;
     long count = 0;
@@ -100,23 +136,22 @@ int **Board::solve()
     Ticket *firstChangeable = Board::getFirstNonFixed();
 
     while(++count < MAX_SOLVE_ITER) {
-        possible.clear();
-        if(!board.at(i).at(j)->is_fixed()) {
-            board.at(i).at(j)->get_possible_values(possible);
-            int ticket_val = board.at(i).at(j)->get_value();
+        if(!board[i][j]->is_fixed()) {
+            possible = board[i][j]->get_possible_values();
+            int ticket_val = board[i][j]->get_value();
             int num_possible = static_cast<int>(possible.size());
 
             for (int k = 0; k < num_possible; k++) {
                 if (ticket_val < possible.at(k)) {
-                    board.at(i).at(j)->set_value(possible.at(k));
+                    board[i][j]->set_value(possible.at(k));
                 }
             }
-            if (board.at(i).at(j)->get_value() == 0){
+            if (board[i][j]->get_value() == 0){
                 forward = false;
-            } else if (board.at(i).at(j)->get_value() == ticket_val &&
+            } else if (board[i][j]->get_value() == ticket_val &&
                     forward == false){
-                if (board.at(i).at(j) != firstChangeable) {
-                    board.at(i).at(j)->set_value(0);
+                if (board[i][j] != firstChangeable) {
+                    board[i][j]->set_value(0);
                 } else {
                     // if we reached here, we need to terminate
                     // else the loop will reach an oscillating state
@@ -131,29 +166,29 @@ int **Board::solve()
             break;
         }
         if (forward) {
-            i++;
-            if (i >=9){
-                j++;
-                i=0;
+            j++;
+            if ( j >=9 ){
+                i++;
+                j=0;
             }
         } else {
-            i--;
-            if (i < 0) {
-                i = 8;
-                if (j == 0) {
+            j--;
+            if (j < 0) {
+                j = 8;
+                if (i == 0) {
                     return NULL;
                 }
-                j--;
+                i--;
             }
         }
     }
-    int **ret = (int**) malloc(9*sizeof(int*));
-
+    if (count == MAX_SOLVE_ITER) {
+        return NULL;
+    }
     for (int i = 0; i < 9; i++) {
-        ret[i] = (int *) malloc(9*sizeof(int));
         for (int j = 0; j < 9; j++){
-            ret[i][j] = board.at(i).at(j)->get_value();
+            (*brd)[i][j] = board[i][j]->get_value();
         }
     }
-    return ret;
+    return brd;
 }

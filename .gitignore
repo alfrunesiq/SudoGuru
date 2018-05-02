@@ -2,7 +2,7 @@ ideer.txt
 src/test*
 src/sudokusolver/test*
 src/build
-state-machine.*
+state-machine.v*
 *.html
 src/digitNet/*.meta
 src/digitNet/*.data*

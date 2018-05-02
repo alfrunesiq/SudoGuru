@@ -20,12 +20,6 @@ static std::vector<cv::Scalar> map = {
 static cv::Mat lbl, stats, centroids;
 std::vector<cv::Vec2f> lines;
 
-// TODO: Remove this:
-static int counter = 0;
-static std::string path = "/tmp/English/";
-static time_t now =std::chrono::system_clock::to_time_t(
-    std::chrono::system_clock::now());
-// TODO END
 
 /**
  * @brief  find biggest connected component whitin segmented image
@@ -334,19 +328,18 @@ std::vector<cv::Rect> Extractor::findDigits(cv::Mat board_thr)
  * @param board   image of segmented board
  * @return        9x9 matrix of digits.
  */
-std::vector<std::vector<int>> Extractor::extractGrid (cv::Mat board) {
+std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     cv::Mat buf;
     cv::Mat board32f;
     std::vector<cv::Vec2f> lines;
     std::vector<cv::Vec2f> horizontal, vertical;
-    std::vector<std::vector<int>> grid;
     double max, min;
 
     // Threshold and hough transform
     cv::cvtColor(board, board, cv::COLOR_BGR2GRAY);
     cv::adaptiveThreshold(board, buf, 255,
                           cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-                          cv::THRESH_BINARY_INV, 17, 7.0);
+                          cv::THRESH_BINARY_INV, 19, 8.0);
 
     board.convertTo(board32f, CV_32F);
     cv::minMaxLoc(board32f, &min, &max);
@@ -355,10 +348,10 @@ std::vector<std::vector<int>> Extractor::extractGrid (cv::Mat board) {
 
     // Thin lines first by removing non -vertical/-horizontal
     for (int i = static_cast<int>(lines.size()-1) ; i >= 0 ; i--) {
-        if ( ((lines[i][1] > CV_PI/36.0f) &&
-              (lines[i][1] < (CV_PI/2.0f - CV_PI/36.0f))) ||
-             ((lines[i][1] > (CV_PI/2.0f + CV_PI/36.0f)) &&
-              (lines[i][1] < (35.0f*CV_PI/36.0f)))) {
+        if ( ((lines[i][1] > CV_PI/18.0f) &&
+              (lines[i][1] < (CV_PI/2.0f - CV_PI/18.0f))) ||
+             ((lines[i][1] > (CV_PI/2.0f + CV_PI/18.0f)) &&
+              (lines[i][1] < (17.0f*CV_PI/18.0f)))) {
             lines.pop_back();
         }
     }
@@ -373,33 +366,13 @@ std::vector<std::vector<int>> Extractor::extractGrid (cv::Mat board) {
         }
     }
 
-    /* TODO: remove this when fixed... */
-    cv::Mat img = cv::Mat::zeros(cv::Size(BOARDSIZE, BOARDSIZE), CV_8U);
-    for (size_t i = 0; i < vertical.size(); i++) {
-        cv::Vec2f ln = vertical[i];
-        float y = ln[0] / std::sin(ln[1]),
-            x = -1 / std::tan(ln[1]);
-        cv::line(img, cv::Point(0, y),
-                 cv::Point(img.cols, img.cols*x+y), CV_RGB(0,0,255));
-    }
-    for (size_t i = 0; i < horizontal.size(); i++) {
-        cv::Vec2f ln = horizontal[i];
-        float y = ln[0] / std::sin(ln[1]),
-            x = -1 / std::tan(ln[1]);
-        cv::line(img, cv::Point(0, y),
-                 cv::Point(img.cols, img.cols*x+y), CV_RGB(0,0,255));
-    }
-    img = 0.8*img + 0.2*board;
-    cv::imshow("win", img);
-
-    /* TODO: remove to here */
 
     // SANITY CHECK: check if we have a minimum number of lines
     if (vertical.size() < 5 || horizontal.size() < 5) {
 #ifdef DEBUG
         std::cout << "Insufiicient number of lines\n";
 #endif
-        return grid;
+        return NULL;
     }
 
     std::sort(vertical.begin(), vertical.end(), compRho);
@@ -486,12 +459,33 @@ std::vector<std::vector<int>> Extractor::extractGrid (cv::Mat board) {
     }
     /* END: interpolate lines */
 
+    /* TODO: remove this when fixed... */
+    cv:: Mat img = cv::Mat::zeros(cv::Size(BOARDSIZE, BOARDSIZE), CV_8U);
+    for (size_t i = 0; i < vertical.size(); i++) {
+        cv::Vec2f ln = vertical[i];
+        float y = ln[0] / std::sin(ln[1]),
+            x = -1 / std::tan(ln[1]);
+        cv::line(img, cv::Point(0, y),
+                 cv::Point(img.cols, img.cols*x+y), CV_RGB(0,0,255));
+    }
+    for (size_t i = 0; i < horizontal.size(); i++) {
+        cv::Vec2f ln = horizontal[i];
+        float y = ln[0] / std::sin(ln[1]),
+            x = -1 / std::tan(ln[1]);
+        cv::line(img, cv::Point(0, y),
+                 cv::Point(img.cols, img.cols*x+y), CV_RGB(0,0,255));
+    }
+    img = 0.8*img + 0.2*board;
+    cv::imshow("win", img);
+    cv::waitKey(0);
+    /* TODO: remove to here */
+
     // SANITY CHECK: have we all 10 lines?
     if (vertical.size() != 10 && horizontal.size() != 10) {
 #ifdef DEBUG
         std::cout << "extractGrid: could not resolve lines\n";
 #endif
-        return grid;
+        return NULL;
     }
 
     // SANITY CHECK: does line gaps make sense?
@@ -501,49 +495,52 @@ std::vector<std::vector<int>> Extractor::extractGrid (cv::Mat board) {
 #ifdef DEBUG
             std::cout << "Grid gaps doesn't fit model\n";
 #endif
-            return grid;
+            return NULL;
         }
         diff = cv::abs(horizontal[i][0] - horizontal[i-1][0]);
         if (diff > GRID_GAP_MAX|| diff < GRID_GAP_MIN) {
 #ifdef DEBUG
             std::cout << "Grid gaps doesn't fit model\n";
 #endif
-            return grid;
+            return NULL;
         }
     }
 
-#ifdef DEBUG // show classified images
+    for (int i = 0; i < 9; i++) {
+        for (int j = 0; j < 9; j++) {
+            grid[i][j] = 0;
+        }
+    }
     std::vector<cv::Rect> digits = findDigits(buf);
     cv::Mat buf_col;
     cv::cvtColor(buf, buf_col, cv::COLOR_GRAY2BGR);
     cv::Mat croped, croped32f, input_img, blob, out;
     int argmax[2];
-    // TODO: REMOVE THIS:
-    char cbuf[128];
-
-    // TODO END
     for (cv::Rect digit : digits) {
         croped = buf(digit);
         cv::resize(croped, input_img, cv::Size(NET_INPUT_SIZE, NET_INPUT_SIZE));
-        cv::dnn::blobFromImage(input_img, blob, 1.0, cv::Size(32,32));
+        cv::dnn::blobFromImage(input_img, blob, 1.0, cv::Size(NET_INPUT_SIZE,
+                                                              NET_INPUT_SIZE));
         net.setInput(blob);
         out = net.forward();
-        // TODO: REMOVE THIS:
-        cv::imshow("digit", input_img);
-        cbuf[0] = static_cast<char>(cv::waitKey(0));
-        sprintf(cbuf+1, "%ld_%d.png",(long) now, counter++);
-        std::string filename = path;
-        filename.append(std::string(cbuf));
-        std::cout << filename << "\n";
-        cv::imwrite(filename, input_img);
-        // TODO END
         cv::minMaxIdx(out.reshape(1), 0, 0, 0, argmax);
         cv::rectangle(buf_col, digit, map[argmax[1]], 1);
+        if (out.at<float>(argmax[1]) > CONFIDENCE_THRESH) {
+            int x = digit.x + digit.width/2;
+            int y = digit.y + digit.height/2;
+            x /= GRID_GAP_AVG;
+            y /= GRID_GAP_AVG;
+            if (x > 8) {
+                x = 8;
+            }
+            if (y > 8) {
+                y = 8;
+            }
+            grid[y][x] = argmax[1]+1;
+        }
     }
     cv::imshow("sgmted", buf_col);
-    cv::imwrite("/tmp/test.png", buf_col);
-#endif
-    return grid;
+    return &grid;
 }
 
 
@@ -577,41 +574,3 @@ cv::Point2f getLineIntersection(cv::Vec2f rt1, cv::Vec2f rt2)
                            std::abs(intersect[1]/intersect[2]));
     }
 }
-
-
-
-
-/* FROM after #endif printing and drawing lines
-    // find line intersections to get corners, and
-    // place in 10x10 grid;
-    // enure edges are present
-    // loop over all boxes and template match I guess
-    cv::Point2f corners[4];
-    cv::Point2f corner_pts[4] = {{0, 0}, {0, 48}, {48, 48}, {48, 0}};
-    cv::Mat box, box_cropped;
-    cv::Matx33f H_;
-    cv::Mat blob, one_hot;
-    for (size_t i = 1; i < horizontal.size(); i++) {
-        for (size_t j = 1; j < vertical.size(); j++) {
-            // get grid intersections
-            corners[0] = getLineIntersection(vertical[j-1], horizontal[i-1]);
-            corners[1] = getLineIntersection(vertical[j-1], horizontal[i]);
-            corners[2] = getLineIntersection(vertical[j], horizontal[i]);
-            corners[3] = getLineIntersection(vertical[j], horizontal[i-1]);
-
-            // extract boxes and crop
-            H_ = cv::getPerspectiveTransform(corners, corner_pts);
-            cv::warpPerspective(board32f, box, H_, cv::Size(48,48), cv::INTER_LANCZOS4);
-            cv::minMaxLoc(box, &min, &max);
-            box = (box - min)/(max-min); //normalize and invert (network trained on mnist)
-            box_cropped = 1.0f - box(cv::Rect(cv::Point2i(8, 8), cv::Point2i(40,40)));
-            cv::dnn::blobFromImage(box_cropped, blob, 1.0, cv::Size(32, 32));
-            net.setInput(blob);
-            one_hot = net.forward();
-            std::cout << one_hot << "\n";
-            cv::imshow("digit", box);
-            cv::imshow("digit_cropped", box_cropped);
-            cv::waitKey(0);
-        }
-    }
-*/

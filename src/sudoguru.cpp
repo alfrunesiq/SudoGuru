@@ -1,14 +1,14 @@
 #include "sudoguru.hpp"
 #include "extractools.hpp"
+#include "sudokusolver/sudoku_board.hpp"
 
 int sudoguru (void)
 {
 #ifdef DEBUG
-    cv::namedWindow("cam0");
     cv::namedWindow("Thresholded");
     cv::namedWindow("Perspective", cv::WINDOW_AUTOSIZE);
-    cv::namedWindow("Corner", cv::WINDOW_AUTOSIZE);
 #endif
+    cv::namedWindow("Camera");
     cv::VideoCapture cap;
     Extractor *extractor = new Extractor;
     if (!cap.open(CAMERA_ID_0)) {
@@ -34,10 +34,13 @@ int sudoguru (void)
            _11x11circ = cv::getStructuringElement(cv::MORPH_ELLIPSE,
                                                    cv::Size(11,11));
 
+
     // Corner points and edge lines
     std::vector<cv::Point2f> pts;
     std::vector<cv::Vec2f> edges;
 
+    Board sudokuBoard = Board();
+    std::vector<std::vector<int>> *grid;
 
     for (;;)
     {
@@ -106,9 +109,29 @@ int sudoguru (void)
             cv::warpPerspective(frame, prspct, H,
                                 cv::Size(BOARDSIZE,BOARDSIZE),
                                 cv::INTER_LINEAR);
-            extractor->extractGrid(prspct);
+            grid = extractor->extractGrid(prspct);
             cv::imshow("Perspective", prspct);
 
+            if (grid != NULL) {
+                std::cout << grid->size();
+                sudokuBoard.setBoard(grid);
+                if(sudokuBoard.solve(grid)){
+                    for (int i = 0; i < 9; i++) {
+                        if(!(i % 3)) { printf("%22s\n",
+                                              "+-----------------------+");}
+                        for (int j = 0; j < 9; j++) {
+                            if(!(j % 3)) { printf("| "); }
+                            printf("%d ", (*grid)[i][j]);
+                        }
+                        printf("|\n");
+                    }
+                    printf("%22s\n",
+                           "+-----------------------+");
+                    printf("\n\n");
+                } else {
+                    std::cout << "Board Size < 9 !!!\n";
+                }
+            }
             // draw markers for points used in transform
             cv::drawMarker(frame, pts[1], CV_RGB(255, 128, 0), cv::MARKER_DIAMOND);
             cv::drawMarker(frame, pts[2], CV_RGB(255, 255, 56), cv::MARKER_DIAMOND);
@@ -116,7 +139,7 @@ int sudoguru (void)
             cv::drawMarker(frame, pts[3], CV_RGB(230, 57, 255), cv::MARKER_DIAMOND);
         }
 
-        cv::imshow("cam0", frame);
+        cv::imshow("Camera", frame);
 #ifdef DEBUG
         auto t2 = std::chrono::high_resolution_clock::now();
         cv::imshow("Thresholded", frame_bin);
