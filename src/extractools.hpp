@@ -56,6 +56,11 @@ cv::Point2f getLineIntersection(cv::Vec2f rt1, cv::Vec2f rt2);
  */
 std::vector<cv::Vec2f> bundleHough (std::vector<cv::Vec2f> hough,
                                     float thresh_rho, float thresh_theta);
+
+/**
+ * @class Extractor: container of all sudoku extraction functions
+ *                   and their shared data.
+ */
 class Extractor
 {
 public:

@@ -318,6 +318,18 @@ std::vector<cv::Rect> Extractor::findDigits(cv::Mat board_thr)
             digits.push_back(boundingBox);
         }
     }
+    /*
+    for (size_t i = 0; i < digits.size(); i++) {
+        for (size_t j = 0; j < digits.size(); j++) {
+            if ((digits[i] & digits[j]).area() != 0) {
+                if (digits[i].area() < digits[j].area()) {
+                    digits.erase(digits.begin() + i);
+                } else {
+                    digits.erase(digits.begin() + j);
+                }
+            }
+        }
+    }*/
 
     return digits;
 }
@@ -348,29 +360,45 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
 
     // Thin lines first by removing non -vertical/-horizontal
     for (int i = static_cast<int>(lines.size()-1) ; i >= 0 ; i--) {
-        if ( ((lines[i][1] > CV_PI/18.0f) &&
-              (lines[i][1] < (CV_PI/2.0f - CV_PI/18.0f))) ||
-             ((lines[i][1] > (CV_PI/2.0f + CV_PI/18.0f)) &&
-              (lines[i][1] < (17.0f*CV_PI/18.0f)))) {
-            lines.pop_back();
+        float theta = (lines[i][1] > CV_PI) ? lines[i][1] - 1 :
+            lines[i][1];
+        if ( ((theta > CV_PI/18.0f) &&
+              (theta < (CV_PI/2.0f - CV_PI/18.0f))) ||
+             ((theta > (CV_PI/2.0f + CV_PI/18.0f)) &&
+              (theta < (17.0f*CV_PI/18.0f)))) {
+            lines.erase(lines.begin() + i);
         }
     }
     lines = bundleHough(lines, 17.0, 1.0);
 
-    // sort out vertical and horizontal lines
+    // sort out vertical and horizontal lines and average theta
+    float thetaVavg = 0, thetaHavg = 0;
     for (cv::Vec2f line : lines) {
         if (line[1] < CV_PI/4.0f || line[1] > 3.0f*CV_PI/4.0f) {
             vertical.push_back(line);
+            if (line[1] < CV_PI/2.0f)
+                thetaVavg += line[1] + CV_PI;
+            else
+                thetaVavg += line[1];
         } else {
             horizontal.push_back(line);
+            thetaHavg += line[1];
         }
+    }
+    thetaVavg /= static_cast<float>(vertical.size());
+    thetaHavg /= static_cast<float>(horizontal.size());
+    for (size_t i = 0; i < vertical.size(); i++) {
+        vertical[i][1] = thetaVavg;
+    }
+    for (size_t i = 0; i < horizontal.size(); i++) {
+        horizontal[i][1] = thetaHavg;
     }
 
 
     // SANITY CHECK: check if we have a minimum number of lines
     if (vertical.size() < 5 || horizontal.size() < 5) {
 #ifdef DEBUG
-        std::cout << "Insufiicient number of lines\n";
+        std::cout << "DEBUG: Insufiicient number of lines\n";
 #endif
         return NULL;
     }
@@ -379,21 +407,21 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     std::sort(horizontal.begin(), horizontal.end(), compRho);
 
     // interpolate missing lines
-    if (vertical[0][0] > 16.0f) {
+    if (vertical[0][0] > GRID_GAP_MIN) {
         vertical.insert(vertical.begin(), cv::Vec2f(0.0f, vertical[0][1]));
     }
-    if (vertical.back()[0] < (BOARDSIZE - 16.0f)) {
+    if (vertical.back()[0] < (BOARDSIZE - GRID_GAP_MIN)) {
         vertical.push_back(cv::Vec2f(BOARDSIZE, vertical.back()[1]));
     }
-    if (horizontal[0][0] > 16.0f) {
+    if (horizontal[0][0] > GRID_GAP_MIN) {
         horizontal.insert(horizontal.begin(), cv::Vec2f(0.0f, horizontal[0][1]));
     }
-    if (horizontal.back()[0] < (BOARDSIZE - 16.0f)) {
+    if (horizontal.back()[0] < (BOARDSIZE - GRID_GAP_MIN)) {
         horizontal.push_back(cv::Vec2f(BOARDSIZE, horizontal.back()[1]));
     }
     for (size_t i = 1; i < vertical.size(); i++) {
         float diff = cv::abs(vertical[i][0] - vertical[i-1][0]);
-        if (diff < 16.0f) {
+        if (diff < GRID_GAP_MIN) {
             if (vertical[i-1][0] < 0) {
                 vertical[i-1][0] = -vertical[i-1][0];
                 vertical[i-1][1] = vertical[i-1][1] < CV_PI/2.0f ?
@@ -413,7 +441,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
             vertical.insert(vertical.begin() + i, vertical[i]);
             vertical[i][0] -= diff/2.0f;
             i++;
-        } else if (diff > 3*GRID_GAP_MIN && diff < 3*GRID_GAP_MAX) {
+        } else if (diff > 2*GRID_GAP_MAX && diff < 3*GRID_GAP_MAX) {
             // two missing lines
             diff = diff/3.0f;
             vertical.insert(vertical.begin() + i, vertical[i-1]);
@@ -459,52 +487,32 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     }
     /* END: interpolate lines */
 
-    /* TODO: remove this when fixed... */
-    cv:: Mat img = cv::Mat::zeros(cv::Size(BOARDSIZE, BOARDSIZE), CV_8U);
-    for (size_t i = 0; i < vertical.size(); i++) {
-        cv::Vec2f ln = vertical[i];
-        float y = ln[0] / std::sin(ln[1]),
-            x = -1 / std::tan(ln[1]);
-        cv::line(img, cv::Point(0, y),
-                 cv::Point(img.cols, img.cols*x+y), CV_RGB(0,0,255));
-    }
-    for (size_t i = 0; i < horizontal.size(); i++) {
-        cv::Vec2f ln = horizontal[i];
-        float y = ln[0] / std::sin(ln[1]),
-            x = -1 / std::tan(ln[1]);
-        cv::line(img, cv::Point(0, y),
-                 cv::Point(img.cols, img.cols*x+y), CV_RGB(0,0,255));
-    }
-    img = 0.8*img + 0.2*board;
-    cv::imshow("win", img);
-    cv::waitKey(0);
-    /* TODO: remove to here */
-
     // SANITY CHECK: have we all 10 lines?
     if (vertical.size() != 10 && horizontal.size() != 10) {
 #ifdef DEBUG
-        std::cout << "extractGrid: could not resolve lines\n";
+        std::cout << "DEBUG: extractGrid: could not resolve lines\n";
 #endif
         return NULL;
     }
 
     // SANITY CHECK: does line gaps make sense?
+    /*
     for (size_t i = 1; i < vertical.size(); i++) {
         float diff = cv::abs(vertical[i][0] - vertical[i-1][0]);
         if (diff > GRID_GAP_MAX || diff < GRID_GAP_MIN) {
 #ifdef DEBUG
-            std::cout << "Grid gaps doesn't fit model\n";
+            std::cout << "DEBUG: Grid gaps doesn't fit model\n";
 #endif
             return NULL;
         }
         diff = cv::abs(horizontal[i][0] - horizontal[i-1][0]);
         if (diff > GRID_GAP_MAX|| diff < GRID_GAP_MIN) {
 #ifdef DEBUG
-            std::cout << "Grid gaps doesn't fit model\n";
+            std::cout << "DEBUG: Grid gaps doesn't fit model\n";
 #endif
             return NULL;
         }
-    }
+        }*/
 
     for (int i = 0; i < 9; i++) {
         for (int j = 0; j < 9; j++) {
@@ -539,7 +547,9 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
             grid[y][x] = argmax[1]+1;
         }
     }
-    cv::imshow("sgmted", buf_col);
+#ifdef DEBUG
+    cv::imshow("digits", buf_col);
+#endif
     return &grid;
 }
 

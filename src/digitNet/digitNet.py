@@ -16,28 +16,27 @@ chars78k (with digits 1-9 non-italic fonts) aswell as some images
 gathered from actual sudokuboards totalling in 68.128 images.
 """
 
-num_epochs = 999
-batch_size = 2096
+num_epochs = 2000
+batch_size = 4096
 
 #Fixed regularization parameters
-lambda_conv1 = 2.5e-4
-lambda_conv2 = 2.5e-4
-lambda_conv3 = 2.5e-4
-lambda_FC    = 2e-3
+lambda_conv1 = 1e-3
+lambda_conv2 = 5e-4
+lambda_conv3 = 1e-6
+lambda_FC    = 1e-4
 
 ## Parameters over iterations:
-dropout_upd   = [    1,   50,  100,  250, 500,  750, 980, 1500, 1750, 2000, num_epochs+1]
-dropRate_FC   = [0, 0.75, 0.65, 0.6,  0.5, 0.4,  0.1, 0,  0.2, 0.05,   0]
-dropRate_conv = [0, 0.7,  0.6, 0.55,  0.5, 0.4,  0.1, 0,   0.2, 0.05,   0]
+dropout_upd   = [      1,  100,  250,  500, 750, 1000, 1500, 1750, 1900, num_epochs+1]
+dropRate_FC   = [0, 0.75, 0.65,  0.6,  0.5, 0.4,  0.3, 0.2,   0.1,    0]
+dropRate_conv = [0,  0.7,  0.6, 0.55,  0.5, 0.4,  0.3, 0.2,  0.05,    0]
 
 lr_decay_intrvl = 50
 learningRate    = 1.0
-##
 
 ## Conv kernel size is fixed to 5 (since it adds up)
 conv1_depth   = 6
-conv2_depth   = 12
-conv3_depth   = 96
+conv2_depth   = 10
+conv3_depth   = 100
 fc1_size      = 32
 
 img_size     = 32
@@ -66,6 +65,7 @@ if (len(sys.argv) > 1 and sys.argv[1] == "mnist"):
         x_train = np.concatenate([x_train, mnist_train_ext], axis=0)
         y_train_true = np.concatenate([y_train_true, mnist_train_one_hot], axis=0)
 
+## Smooth the one-hot labels a little bit
 eps = 1e-8
 y_train_true[y_train_cls == 6] = np.array([eps, eps, eps, eps, 0, 1-6*eps, 0.5*eps, 0.5*eps, eps])
 y_train_true[y_train_cls == 5] = np.array([eps, eps, eps, eps, 1-6*eps, 0, 0.5*eps, 0.5*eps, eps])
@@ -117,6 +117,14 @@ y_pred     = tf.nn.softmax(logits=logits, name="y_pred")
 y_pred_cls = tf.argmax(y_pred, axis=1)
 
 num_params = 0
+cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y_true, logits=logits)
+regularizer   = lambda_FC*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_fc1/kernel:0'))
+regularizer   += lambda_FC*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_fc2/kernel:0'))
+
+regularizer  += lambda_conv1*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_conv1/kernel:0'))
+regularizer  += lambda_conv2*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_conv2/kernel:0'))
+regularizer  += lambda_conv3*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_conv3/kernel:0'))
+
 for layer in ["layer_fc1", "layer_fc2", "layer_conv1", "layer_conv2", "layer_conv3"]:
     weights = tf.get_default_graph().get_tensor_by_name(layer + "/kernel:0")
     num_params += np.prod(weights.get_shape().as_list())
@@ -125,16 +133,16 @@ for layer in ["layer_fc1", "layer_fc2", "layer_conv1", "layer_conv2", "layer_con
         bias = tf.get_default_graph().get_tensor_by_name(layer + "/bias:0")
         num_params += np.prod(bias.get_shape().as_list())
         print ("%s bias:   " % layer, bias.get_shape().as_list())
+
+    if layer in ["layer_conv1", "layer_conv2"]:
+        for i in range(weights.get_shape().as_list()[-1]):
+            for j in range(i+1, weights.get_shape().as_list()[-1]):
+                regularizer += 1e-3* 1/(tf.nn.l2_loss(weights[:,:,:,i] - weights[:,:,:,j])+eps)
+
+
 print("--Total number of parameters:%d" % num_params)
 
 
-cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y_true, logits=logits)
-regularizer   = lambda_FC*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_fc1/kernel:0'))
-regularizer   += lambda_FC*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_fc2/kernel:0'))
-
-regularizer  += lambda_conv1*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_conv1/kernel:0'))
-regularizer  += lambda_conv2*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_conv2/kernel:0'))
-regularizer  += lambda_conv3*tf.nn.l2_loss(tf.get_default_graph().get_tensor_by_name('layer_conv3/kernel:0'))
 
 
 loss = tf.reduce_mean(cross_entropy) + regularizer
