@@ -134,10 +134,11 @@ for layer in ["layer_fc1", "layer_fc2", "layer_conv1", "layer_conv2", "layer_con
         num_params += np.prod(bias.get_shape().as_list())
         print ("%s bias:   " % layer, bias.get_shape().as_list())
 
-    if layer in ["layer_conv1", "layer_conv2"]:
+    if layer in ["layer_conv1", "layer_conv2", "layer_conv3"]:
         for i in range(weights.get_shape().as_list()[-1]):
+            print("Diff %d" % i)
             for j in range(i+1, weights.get_shape().as_list()[-1]):
-                regularizer += 1e-3* 1/(tf.nn.l2_loss(weights[:,:,:,i] - weights[:,:,:,j])+eps)
+                regularizer += 2e-3/(tf.nn.l2_loss(weights[:,:,:,i] - weights[:,:,:,j])+1)
 
 
 print("--Total number of parameters:%d" % num_params)

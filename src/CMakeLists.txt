@@ -13,9 +13,6 @@ endif (MSVC)
 
 # Add libraries.
 find_package(OpenCV 3.3.1 REQUIRED)
-#find_package(Eigen3 3.3.4 REQUIRED)
-#find_package(sophus REQUIRED)
-#find_package(GTSAM REQUIRED)
 
 include_directories(${PROJECT_SOURCE_DIR}/sudokusolver)
 add_subdirectory(sudokusolver)
@@ -24,6 +21,7 @@ add_executable(${PROJECT_NAME}
   main.cpp
   sudoguru.cpp
   extractools.cpp
+  homography_estimator.cpp
   )
 
 target_link_libraries(${PROJECT_NAME} SudokuSolver ${OpenCV_LIBS})

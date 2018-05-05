@@ -17,15 +17,15 @@
 #define DIGIT_MIN_AREA     82
 #define DIGIT_MAX_AREA     1156  // 34*34
 #define DIGIT_HEIGHT_MIN   7
-#define DIGIT_HEIGHT_MAX   30
+#define DIGIT_HEIGHT_MAX   31
 #define DIGIT_WIDTH_MIN    7
-#define DIGIT_WIDTH_MAX    30
+#define DIGIT_WIDTH_MAX    31
 
 #define HOUGH_THRESHOLD    BOARDSIZE-100
 
 #define GRID_GAP_AVG       34
 #define GRID_GAP_MIN       27
-#define GRID_GAP_MAX       42
+#define GRID_GAP_MAX       36
 
 
 /**
@@ -119,8 +119,9 @@ private:
     // grid: grid placeholder reference returned in extractGrid()
     std::vector<std::vector<int>> grid;
 
-    cv::Mat _3x3Cross = cv::getStructuringElement(cv::MORPH_CROSS,
+    cv::Mat _3x3cross = cv::getStructuringElement(cv::MORPH_CROSS,
                                                   cv::Size(3,3));
+    cv::Mat _prewitKrnl = (cv::Mat_<char>(3,1) << -1, 0, 1);
 
     std::vector<cv::Rect> findDigits(cv::Mat board_thr);
 };

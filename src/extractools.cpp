@@ -288,7 +288,7 @@ std::vector<cv::Rect> Extractor::findDigits(cv::Mat board_thr)
     int ncomponents;
 
     // close in possibly fragmented numbers
-    cv::dilate(board_thr, tmp, _3x3Cross);
+    cv::dilate(board_thr, tmp, _3x3cross);
 
     // find boundingboxes around connected components
     ncomponents = cv::connectedComponentsWithStats(tmp, labels, stats,
@@ -341,22 +341,31 @@ std::vector<cv::Rect> Extractor::findDigits(cv::Mat board_thr)
  * @return        9x9 matrix of digits.
  */
 std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
-    cv::Mat buf;
-    cv::Mat board32f;
+    cv::Mat buf, bufHough, board_;
+    cv::Mat grad, gradY;
     std::vector<cv::Vec2f> lines;
     std::vector<cv::Vec2f> horizontal, vertical;
     double max, min;
 
-    // Threshold and hough transform
     cv::cvtColor(board, board, cv::COLOR_BGR2GRAY);
+    board.convertTo(board_, CV_32F);
+    cv::minMaxLoc(board, &min, &max);
+    board_ = (board_ - min)/(max-min);
+    cv::filter2D(board_, grad, CV_32F, _prewitKrnl);
+    cv::filter2D(board_, gradY, CV_32F, _prewitKrnl.t());
+    grad = cv::abs(grad) + cv::abs(gradY);
+    grad = 255.0f*(board_ - grad);
+    grad.convertTo(bufHough, CV_8UC1);
+    cv::imshow("bufHough", bufHough);
+    // Threshold and hough transform
     cv::adaptiveThreshold(board, buf, 255,
                           cv::ADAPTIVE_THRESH_GAUSSIAN_C,
                           cv::THRESH_BINARY_INV, 19, 8.0);
+    cv::adaptiveThreshold(bufHough, bufHough, 255,
+                          cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+                          cv::THRESH_BINARY_INV, 19, 8.0);
 
-    board.convertTo(board32f, CV_32F);
-    cv::minMaxLoc(board32f, &min, &max);
-    board32f = (board32f - min)/(max-min);
-    cv::HoughLines(buf, lines, 1, CV_PI/180, 150.0);
+    cv::HoughLines(bufHough, lines, 1, CV_PI/180, BOARDSIZE-50);
 
     // Thin lines first by removing non -vertical/-horizontal
     for (int i = static_cast<int>(lines.size()-1) ; i >= 0 ; i--) {
@@ -435,7 +444,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
                                       vertical[i][1] - CV_PI;
             }
             vertical[i-1][0] = (vertical[i-1][0] + vertical[i][0]) / 2.0f;
-            vertical.erase(vertical.begin() + i);
+            vertical.erase(vertical.begin() + i--);
         } else if (diff > 2*GRID_GAP_MIN && diff < 2*GRID_GAP_MAX) {
             // one missing line
             vertical.insert(vertical.begin() + i, vertical[i]);
@@ -455,6 +464,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     for (size_t i = 1; i < horizontal.size(); i++) {
         float diff = cv::abs(horizontal[i][0] - horizontal[i-1][0]);
         if (diff < 16.0f) {
+            // too tight: average and remove
             if (horizontal[i-1][0] < 0) {
                 horizontal[i-1][0] = -horizontal[i-1][0];
                 horizontal[i-1][1] = horizontal[i-1][1] < CV_PI/2.0f ?
@@ -468,7 +478,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
                                         horizontal[i][1] - CV_PI;
             }
             horizontal[i-1][0] = (horizontal[i-1][0] + horizontal[i][0]) / 2.0f;
-            horizontal.erase(horizontal.begin() + i);
+            horizontal.erase(horizontal.begin() + i--);
         } else if (diff > 2*GRID_GAP_MIN && diff < 2*GRID_GAP_MAX) {
             // one missing line
             horizontal.insert(horizontal.begin() + i, horizontal[i]);
@@ -487,7 +497,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     }
     /* END: interpolate lines */
 
-    // SANITY CHECK: have we all 10 lines?
+    // SANITY CHECK: Did we resolve all 10 lines?
     if (vertical.size() != 10 && horizontal.size() != 10) {
 #ifdef DEBUG
         std::cout << "DEBUG: extractGrid: could not resolve lines\n";
@@ -496,7 +506,6 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     }
 
     // SANITY CHECK: does line gaps make sense?
-    /*
     for (size_t i = 1; i < vertical.size(); i++) {
         float diff = cv::abs(vertical[i][0] - vertical[i-1][0]);
         if (diff > GRID_GAP_MAX || diff < GRID_GAP_MIN) {
@@ -512,7 +521,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
 #endif
             return NULL;
         }
-        }*/
+        }
 
     for (int i = 0; i < 9; i++) {
         for (int j = 0; j < 9; j++) {

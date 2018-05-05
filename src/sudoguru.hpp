@@ -17,12 +17,19 @@
   #include <thread>
 #endif
 
-#ifndef CAMERA_ID_0
-  #define CAMERA_ID_0 2
+#ifndef CAMERA_ID
+  #define CAMERA_ID  0
 #endif
 
 #define BOARDSIZE    9*34 // roughly 32x32 per box
 
-int sudoguru(void);
+struct CameraModel
+{
+    bool isSet;
+    cv::Matx33d K;
+    cv::Vec<double, 5> dist_coeffs;
+};
+
+int sudoguru(int argc, char **argv);
 
 #endif /* _SUDOGURU_HPP_ */

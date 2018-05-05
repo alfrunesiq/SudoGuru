@@ -1,12 +1,14 @@
-ideer.txt
+*ideer.md
 src/test*
 src/sudokusolver/test*
 src/build
-state-machine.v*
+*.vsdx
 *.html
 src/digitNet/*.meta
 src/digitNet/*.data*
 src/digitNet/*.index
+*.tex
+*.pdf
 *__pycache__
 *checkpoint
 
