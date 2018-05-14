@@ -5,24 +5,29 @@
 #include <ctime>
 #include <chrono>
 
+#ifdef DEBUG
+// Colormap used for showing detected digits
 static std::vector<cv::Scalar> map = {
-    CV_RGB(142, 69, 19), // 1
+    CV_RGB(142, 69, 19),   // 1
     CV_RGB(255, 0, 0),     // 2
     CV_RGB(255, 150, 0),   // 3
-    CV_RGB(255, 255, 0),    // 4
-    CV_RGB(0, 255, 0),    // 5
-    CV_RGB(0, 0, 255),   // 6
-    CV_RGB(233, 16, 238),   // 7
-    CV_RGB(132, 132, 132),     // 8
-    CV_RGB(255, 255, 255),   // 9
+    CV_RGB(255, 255, 0),   // 4
+    CV_RGB(0, 255, 0),     // 5
+    CV_RGB(0, 0, 255),     // 6
+    CV_RGB(233, 16, 238),  // 7
+    CV_RGB(132, 132, 132), // 8
+    CV_RGB(255, 255, 255), // 9
     CV_RGB(255, 0, 255)
 };
-static cv::Mat lbl, stats, centroids;
-std::vector<cv::Vec2f> lines;
+#endif
 
+#define SEARCH_MARGIN    2.0f // used to relax constraint in exrtact edges
+
+static cv::Mat lbl, stats, centroids;
 
 /**
- * @brief  find biggest connected component whitin segmented image
+ * @brief  find biggest connected component within segmented image
+ *         used for board detection
  * @param  binary image
  * @return new binary image with the component segmented out
  */
@@ -59,6 +64,13 @@ cv::Mat biggestConnectedComponents(cv::Mat binary_image)
     return cc;
 }
 
+/**
+ * @brief bundles together close lines by "averaging"
+ * @param hough        hough lines (rho, theta)
+ * @param thresh_rho   threshold on rho for which lines are grouped together
+ * @param thresh_theta threshold on theta for which lines are grouped
+ * @return  a trimmed set of hough lines
+ */
 std::vector<cv::Vec2f> bundleHough (std::vector<cv::Vec2f> hough,
                                            float thresh_rho, float thresh_theta)
 {
@@ -104,8 +116,14 @@ std::vector<cv::Vec2f> bundleHough (std::vector<cv::Vec2f> hough,
     return ret;
 }
 
+/**
+ * @brief finds the four "most likely" edges of the segmented component
+ * @param img_thr  thresholded image (biggest connected component)
+ * @return vector of four edges in (rho, theta) coordinates
+ */
 std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
 {
+    std::vector<cv::Vec2f> lines;
     std::vector<cv::Vec2f> edges;
     cv::HoughLines(img_thr, lines, 1, CV_PI/180, HOUGH_THRESHOLD);
     /*
@@ -136,7 +154,7 @@ std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
         edges.push_back(cv::Vec2f());
         edges.push_back(lines[0]);
         edges.push_back(cv::Vec2f());
-        // use first line to define orientation of line 0 and 3
+        // use first line to define orientation of line 0 and 2
         // and define intervalls that define relative orthogonality
         if (edges[0][1] < CV_PI/4.0f) {
             theta_intvl[0] = edges[0][1] + 3.0f*CV_PI/4.0f;
@@ -159,9 +177,8 @@ std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
         cv::Point intrsct;
         bool _13notSet = true;
         // find the set of lines that is farthest apart
-        // current distance measure: magnitude of vanishing point and
-        // relative difference of rho
-        /* TODO: define a (more) projectively invariant distance measure */
+        // current distance measure: magnitude of vanishing point (within a margin)
+        // and relative difference of rho.
         for (int i = 1; i < static_cast<int>(lines.size()); i++) {
             float rho = cv::abs(lines[i][0]),
                 theta = lines[i][1];
@@ -171,7 +188,7 @@ std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
                       rho2 = cv::abs(edges[2][0]);
                 intrsct = getLineIntersection(edges[2], lines[i]);
                 if ( ((intrsct == cv::Point(0,0))  ||
-                      (intrsct.dot(intrsct) > intrsct1.dot(intrsct1))) &&
+                      (intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct1.dot(intrsct1))) &&
                      (cv::abs(rho-rho2) > cv::abs(rho2-rho0)) ) {
                     edges[0] = lines[i];
                     intrsct1 = getLineIntersection(edges[0], edges[2]);
@@ -179,7 +196,7 @@ std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
                 }
                 intrsct = getLineIntersection(edges[0], lines[i]);
                 if ( ((intrsct == cv::Point(0,0)) ||
-                      (intrsct.dot(intrsct) > intrsct1.dot(intrsct1))) &&
+                      (intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct1.dot(intrsct1))) &&
                          (cv::abs(rho-rho0) > cv::abs(rho2-rho0)) ) {
                     edges[2] = lines[i];
                     intrsct1 = getLineIntersection(edges[0], edges[2]);
@@ -195,7 +212,7 @@ std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
                 float rho1 = cv::abs(edges[1][0]),
                       rho3 = cv::abs(edges[3][0]);
                 if ( ((intrsct == cv::Point(0,0)) ||
-                     (intrsct.dot(intrsct) > intrsct2.dot(intrsct2)) ) &&
+                      (intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct2.dot(intrsct2)) ) &&
                      (cv::abs(rho-rho3) > cv::abs(rho3-rho1)) ) {
                     edges[1] = lines[i];
                     intrsct2 = getLineIntersection(edges[1], edges[3]);
@@ -203,7 +220,7 @@ std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
                 }
                 intrsct = getLineIntersection(edges[1], lines[i]);
                 if ( ((intrsct == cv::Point(0,0)) ||
-                      (intrsct.dot(intrsct) > intrsct2.dot(intrsct2))) &&
+                      (intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct2.dot(intrsct2))) &&
                      (cv::abs(rho-rho1) > cv::abs(rho1-rho3)) ) {
                     edges[3] = lines[i];
                     intrsct2 = getLineIntersection(edges[1], edges[3]);
@@ -214,6 +231,11 @@ std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
     return edges;
 }
 
+/**
+ * @brief extracts the four corners from the four lines in edges
+ * @param edges  vector containing four (rho, theta) edges
+ * @return  vector of the four corner-points
+ */
 std::vector<cv::Point2f> Extractor::extractCorners (std::vector<cv::Vec2f> edges)
 {
     std::vector<cv::Point2f> pts;
@@ -348,6 +370,10 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     double max, min;
 
     cv::cvtColor(board, board, cv::COLOR_BGR2GRAY);
+
+    // pre-process gray-image by subtracting prewitt xy-
+    // gradients, such that vertical and horizontal lines
+    // get more pronounced
     board.convertTo(board_, CV_32F);
     cv::minMaxLoc(board, &min, &max);
     board_ = (board_ - min)/(max-min);
@@ -356,8 +382,12 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     grad = cv::abs(grad) + cv::abs(gradY);
     grad = 255.0f*(board_ - grad);
     grad.convertTo(bufHough, CV_8UC1);
+
+#ifdef DEBUG
     cv::imshow("bufHough", bufHough);
-    // Threshold and hough transform
+#endif
+    // Threshold two versions; one used for finding lines,
+    // and one for finding digits
     cv::adaptiveThreshold(board, buf, 255,
                           cv::ADAPTIVE_THRESH_GAUSSIAN_C,
                           cv::THRESH_BINARY_INV, 19, 8.0);
@@ -380,7 +410,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     }
     lines = bundleHough(lines, 17.0, 1.0);
 
-    // sort out vertical and horizontal lines and average theta
+    // sort out vertical and horizontal lines and force theta to mean
     float thetaVavg = 0, thetaHavg = 0;
     for (cv::Vec2f line : lines) {
         if (line[1] < CV_PI/4.0f || line[1] > 3.0f*CV_PI/4.0f) {
@@ -404,7 +434,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     }
 
 
-    // SANITY CHECK: check if we have a minimum number of lines
+    // SANITY CHECK 1: check if we have a minimum number of lines
     if (vertical.size() < 5 || horizontal.size() < 5) {
 #ifdef DEBUG
         std::cout << "DEBUG: Insufiicient number of lines\n";
@@ -412,10 +442,11 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
         return NULL;
     }
 
+    // sort arrays in distance from origin
     std::sort(vertical.begin(), vertical.end(), compRho);
     std::sort(horizontal.begin(), horizontal.end(), compRho);
 
-    // interpolate missing lines
+    // (try to) interpolate missing lines
     if (vertical[0][0] > GRID_GAP_MIN) {
         vertical.insert(vertical.begin(), cv::Vec2f(0.0f, vertical[0][1]));
     }
@@ -497,7 +528,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     }
     /* END: interpolate lines */
 
-    // SANITY CHECK: Did we resolve all 10 lines?
+    // SANITY CHECK 2: Did we resolve all 10 lines?
     if (vertical.size() != 10 && horizontal.size() != 10) {
 #ifdef DEBUG
         std::cout << "DEBUG: extractGrid: could not resolve lines\n";
@@ -505,7 +536,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
         return NULL;
     }
 
-    // SANITY CHECK: does line gaps make sense?
+    // SANITY CHECK 3: does line gaps make sense?
     for (size_t i = 1; i < vertical.size(); i++) {
         float diff = cv::abs(vertical[i][0] - vertical[i-1][0]);
         if (diff > GRID_GAP_MAX || diff < GRID_GAP_MIN) {
@@ -521,17 +552,24 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
 #endif
             return NULL;
         }
-        }
+    }
 
+    // zero out grid
     for (int i = 0; i < 9; i++) {
         for (int j = 0; j < 9; j++) {
             grid[i][j] = 0;
         }
     }
-    std::vector<cv::Rect> digits = findDigits(buf);
+
+    // segment out and classify digits
+
+#ifdef DEBUG
+    // show detected digits colorcoded
     cv::Mat buf_col;
     cv::cvtColor(buf, buf_col, cv::COLOR_GRAY2BGR);
-    cv::Mat croped, croped32f, input_img, blob, out;
+#endif
+    std::vector<cv::Rect> digits = findDigits(buf);
+    cv::Mat croped, input_img, blob, out;
     int argmax[2];
     for (cv::Rect digit : digits) {
         croped = buf(digit);
@@ -541,7 +579,6 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
         net.setInput(blob);
         out = net.forward();
         cv::minMaxIdx(out.reshape(1), 0, 0, 0, argmax);
-        cv::rectangle(buf_col, digit, map[argmax[1]], 1);
         if (out.at<float>(argmax[1]) > CONFIDENCE_THRESH) {
             int x = digit.x + digit.width/2;
             int y = digit.y + digit.height/2;
@@ -553,7 +590,11 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
             if (y > 8) {
                 y = 8;
             }
+            //* grid is indexed matrix-wise
             grid[y][x] = argmax[1]+1;
+#ifdef DEBUG
+            cv::rectangle(buf_col, digit, map[argmax[1]], 1);
+#endif
         }
     }
 #ifdef DEBUG
@@ -572,6 +613,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
  */
 cv::Point2f getLineIntersection(cv::Vec2f rt1, cv::Vec2f rt2)
 {
+    // The projective reasoning:
     // r1 = x1 cos (theta1) + y1 sin (theta1)
     // r2 = x2 cos (theta2) + y2 sin (theta2)
     // ax + by + c = 0

@@ -32,4 +32,9 @@ struct CameraModel
 
 int sudoguru(int argc, char **argv);
 
+static cv::Point2f transformPoint(cv::Point2f pt, cv::Mat H);
+
+static bool boardOutsideFrame(std::vector<cv::Point2f> corners,
+                              cv::Mat H, cv::Size frame_size);
+
 #endif /* _SUDOGURU_HPP_ */

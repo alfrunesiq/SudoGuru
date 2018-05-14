@@ -21,7 +21,7 @@ add_executable(${PROJECT_NAME}
   main.cpp
   sudoguru.cpp
   extractools.cpp
-  homography_estimator.cpp
+  homographyestimator.cpp
   )
 
 target_link_libraries(${PROJECT_NAME} SudokuSolver ${OpenCV_LIBS})

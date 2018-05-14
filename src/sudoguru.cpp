@@ -1,7 +1,7 @@
 #include "sudoguru.hpp"
 #include "extractools.hpp"
 #include "sudokusolver/sudoku_board.hpp"
-#include "homography_estimator.hpp"
+#include "homographyestimator.hpp"
 
 int sudoguru (int argc, char **argv)
 {
@@ -100,21 +100,6 @@ int sudoguru (int argc, char **argv)
         cv::erode(frame_buf, frame_buf, _3x3cross);
         frame_buf = biggestConnectedComponents(frame_bin);
 
-        /*
-        cv::cornerMinEigenVal(frame_buf, buf[0], 5, 3);
-        cv::cornerMinEigenVal(frame_buf, buf[1], 9, 7);
-        cv::cornerMinEigenVal(frame_buf, buf[2], 15, 13);
-        cv::max(buf[0], buf[1], buf[0]);
-        cv::max(buf[0], buf[2], buf[0]);
-        cv::dilate(buf[0], buf[1], _11x11circ);
-
-        buf[2] = (buf[1] == buf[0]);
-        buf[2].convertTo(buf[1], buf[0].type());
-        buf[0] = buf[1].mul(buf[0]);
-        double min, max;
-        cv::minMaxLoc(buf[0], &min, &max);
-        cv::threshold(buf[0], buf[0], 0.8*max, 255, cv::THRESH_BINARY);*/
-
         edges = extractor->extractEdges(frame_buf);
         if (edges.size() > 3) {
             pts = extractor->extractCorners(edges);
@@ -160,6 +145,7 @@ int sudoguru (int argc, char **argv)
                                         frame_undist.size(), cv::INTER_LINEAR,
                                         cv::BORDER_CONSTANT, CV_RGB(255,255,255));
                     estimator->setReferenceFrame(frame_undist);
+                    // LOOP: homography tracking
                     cv::Mat buffer;
                     for (;;) {
                         cap >> frame;
@@ -172,8 +158,13 @@ int sudoguru (int argc, char **argv)
                         cv::Mat H2 = estimator->estimateHomography(frame_undist);
                         if (H2.empty()) {
                             break;
+                        } else if (boardOutsideFrame(pts, H2, frame_undist.size())) {
+                            break;
                         }
-                        cv::warpPerspective(frame_mask, buffer, H2, frame_undist.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, CV_RGB(255, 255, 255));
+
+                        cv::warpPerspective(frame_mask, buffer, H2, frame_undist.size(),
+                                            cv::INTER_LINEAR, cv::BORDER_CONSTANT,
+                                            CV_RGB(255, 255, 255));
                         buffer = frame_undist & buffer;
                         cv::imshow("Camera", buffer);
                         if (cv::waitKey(1) >= 0) { return EXIT_SUCCESS; }
@@ -206,4 +197,37 @@ int sudoguru (int argc, char **argv)
     }
 
     return EXIT_SUCCESS;
+}
+
+/**
+ * @brief helper function to projectively transform euclidian points
+ */
+static cv::Point2f transformPoint(cv::Point2f pt, cv::Mat H)
+{
+    float divisor = pt.x*H.at<double>(2,0) + pt.y*H.at<double>(2,1) + H.at<double>(2,2);
+    float x = static_cast<float>(pt.x*H.at<double>(0,0) + pt.y*H.at<double>(0,1) +
+                                 H.at<double>(0,2))/divisor;
+    float y = static_cast<float>(pt.x*H.at<double>(1,0) + pt.y*H.at<double>(1,1) +
+                                 H.at<double>(1,2))/divisor;
+    return cv::Point2f(x, y);
+}
+
+/**
+ * @brief helper function to check if board is outside frame
+ */
+static bool boardOutsideFrame(std::vector<cv::Point2f> corners, cv::Mat H, cv::Size frame_size)
+{
+    int pts_outside = 0;
+    for (cv::Point2f corner : corners)
+    {
+        cv::Point transformed = transformPoint(corner, H);
+        if(transformed.x < 0 || transformed.y < 0 ||
+           transformed.x > frame_size.height || transformed.y > frame_size.width) {
+            pts_outside++;
+        }
+    }
+    if (pts_outside == static_cast<int>(corners.size())) {
+        return true;
+    }
+    return false;
 }

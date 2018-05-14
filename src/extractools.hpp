@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
+// Network parameters
 #define NET_INPUT_SIZE     32
 #define CONFIDENCE_THRESH  0.8
 
@@ -17,9 +18,9 @@
 #define DIGIT_MIN_AREA     82
 #define DIGIT_MAX_AREA     1156  // 34*34
 #define DIGIT_HEIGHT_MIN   7
-#define DIGIT_HEIGHT_MAX   31
+#define DIGIT_HEIGHT_MAX   32
 #define DIGIT_WIDTH_MIN    7
-#define DIGIT_WIDTH_MAX    31
+#define DIGIT_WIDTH_MAX    32
 
 #define HOUGH_THRESHOLD    BOARDSIZE-100
 
@@ -91,26 +92,26 @@ public:
     ~Extractor() {}
 
 
-/**
- * @brief  extracts outermost edges in segmented plane
- * @param  img_thr  thresholded image containing plane edges
- * @return vector with (rho, theta) Hough lines
- */
+    /**
+     * @brief  extracts outermost edges in segmented plane
+     * @param  img_thr  thresholded image containing plane edges
+     * @return vector with (rho, theta) Hough lines
+     */
     std::vector<cv::Vec2f> extractEdges (cv::Mat img_thr);
 
-/**
- * @brief  extracts corners where the four lines intersects
- * @param  edges   edge lines
- * @return intersecting points in orientation preserving order
- */
+    /**
+     * @brief  extracts corners where the four lines intersects
+     * @param  edges   edge lines
+     * @return intersecting points in orientation preserving order
+     */
     std::vector<cv::Point2f> extractCorners (std::vector<cv::Vec2f> edges);
 
-/**
- * @brief  attempts to extract the 9x9 sudokugrid
- * with (blurred) skeleton digit images. (first check if empty)
- * @param board   image of segmented board
- * @return        9x9 matrix of digits.
- */
+    /**
+     * @brief  attempts to extract the 9x9 sudokugrid
+     * with (blurred) skeleton digit images. (first check if empty)
+     * @param board   image of segmented board
+     * @return        9x9 matrix of digits.
+     */
     std::vector<std::vector<int>> *extractGrid (cv::Mat board);
 
 private:
@@ -119,10 +120,20 @@ private:
     // grid: grid placeholder reference returned in extractGrid()
     std::vector<std::vector<int>> grid;
 
-    cv::Mat _3x3cross = cv::getStructuringElement(cv::MORPH_CROSS,
-                                                  cv::Size(3,3));
-    cv::Mat _prewitKrnl = (cv::Mat_<char>(3,1) << -1, 0, 1);
+    const cv::Mat _3x3cross = cv::getStructuringElement(cv::MORPH_CROSS,
+                                                        cv::Size(3,3));
+    // used to pronounce vertical and horizontal lines in extractGrid
+    const cv::Mat _prewitKrnl = (cv::Mat_<char>(3,1) << -1, 0, 1);
 
+    /**
+     *  @brief helper function to get boxes around digits
+     *
+     *  based on the idea used in finding the board
+     *  @param board_thr  thresholded image of segmended board
+     *
+     *  @return           vector of rectangle boxes of detected digits
+     *                    relative to board coordinates
+     */
     std::vector<cv::Rect> findDigits(cv::Mat board_thr);
 };
 

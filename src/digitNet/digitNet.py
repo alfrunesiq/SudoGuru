@@ -16,7 +16,7 @@ chars78k (with digits 1-9 non-italic fonts) aswell as some images
 gathered from actual sudokuboards totalling in 68.128 images.
 """
 
-num_epochs = 2000
+num_epochs = 1000
 batch_size = 4096
 
 #Fixed regularization parameters
@@ -26,9 +26,9 @@ lambda_conv3 = 1e-6
 lambda_FC    = 1e-4
 
 ## Parameters over iterations:
-dropout_upd   = [      1,  100,  250,  500, 750, 1000, 1500, 1750, 1900, num_epochs+1]
-dropRate_FC   = [0, 0.75, 0.65,  0.6,  0.5, 0.4,  0.3, 0.2,   0.1,    0]
-dropRate_conv = [0,  0.7,  0.6, 0.55,  0.5, 0.4,  0.3, 0.2,  0.05,    0]
+dropout_upd   = [      1,  100,  250,  500, 750, 900, 950, 1750, 1900, num_epochs+1]
+dropRate_FC   = [0, 0.75, 0.65,  0.6,  0.5, 0.25,  0.1, 0,   0.1,    0]
+dropRate_conv = [0,  0.7,  0.6, 0.55,  0.5, 0.25,  0.1, 0,  0.05,    0]
 
 lr_decay_intrvl = 50
 learningRate    = 1.0
@@ -134,9 +134,8 @@ for layer in ["layer_fc1", "layer_fc2", "layer_conv1", "layer_conv2", "layer_con
         num_params += np.prod(bias.get_shape().as_list())
         print ("%s bias:   " % layer, bias.get_shape().as_list())
 
-    if layer in ["layer_conv1", "layer_conv2", "layer_conv3"]:
+    if layer in ["layer_conv1", "layer_conv2"]:
         for i in range(weights.get_shape().as_list()[-1]):
-            print("Diff %d" % i)
             for j in range(i+1, weights.get_shape().as_list()[-1]):
                 regularizer += 2e-3/(tf.nn.l2_loss(weights[:,:,:,i] - weights[:,:,:,j])+1)
 
@@ -201,15 +200,15 @@ for i in range(num_epochs):
             l = np.int((j+k)/2.0)
             if i > 950:
                 x_batch[j:l,:,:] = np.clip((x_batch[j:l,:,:] + \
-                                            0.04*np.random.randn(*x_batch[j:l,:,:].shape)), 0.0, 1.0)
+                                            0.1*np.random.randn(*x_batch[j:l,:,:].shape)), 0.0, 1.0)
             elif i > 700:
                 x_batch[j:l,:,:] = np.clip((x_batch[j:l,:,:] + \
-                                            0.02*np.random.randn(*x_batch[j:l,:,:].shape)), 0.0, 1.0)
+                                            0.05*np.random.randn(*x_batch[j:l,:,:].shape)), 0.0, 1.0)
             else:
                 x_batch[j:l,:,:] = np.clip((x_batch[j:l,:,:] + \
                                             0.01*np.random.randn(*x_batch[j:l,:,:].shape)), 0.0, 1.0)
 
-            if i == 1000:
+            if i == 400:
                 ## Add pure noise images and over- and understimulus images, to
                 ## promote network to express uncertainty when an erronous cropped
                 ## image is classified

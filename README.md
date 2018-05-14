@@ -2,8 +2,8 @@
 This project implements a realtime Sudoku solver using OpenCV library. The project is my response to the computer vision assignment at the University of Oslo. 
 
 ## Program flow 
-Below is an early drawing of the program flow. The actual program is slightly diffrent; mostly due to the use of a CNN classifier (instead of brute-force crosscorrelation as I initially planned).
-![alt text](./doc/img/state-machine.png "State machine drawing")
+Below is an drawing of the program's state diagram. 
+![Program flow](./doc/img/state-machine.png "State machine drawing")
 
 ## Instructions
 1.  This program depends on OpenCV 3.3.0 or later (I use 3.4.1); so head over to [opencv](https://github.com/opencv/opencv/) github and follow their instructions. 
