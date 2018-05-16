@@ -8,7 +8,7 @@ if (MSVC)
   add_definitions(/D_USE_MATH_DEFINES)
 else ()
   set(compiler_options -Wall -Wextra -Wpedantic)
-  add_definitions(-DDEBUG)
+  #add_definitions(-DDEBUG)
 endif (MSVC)
 
 # Add libraries.

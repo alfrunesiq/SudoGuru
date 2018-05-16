@@ -3,6 +3,12 @@
 #include "sudokusolver/sudoku_board.hpp"
 #include "homographyestimator.hpp"
 
+// declaration of helperfunctions
+static cv::Point2f transformPoint(cv::Point2f pt, cv::Mat H);
+static bool boardOutsideFrame(std::vector<cv::Point2f> corners,
+                              cv::Mat H, cv::Size frame_size);
+
+
 int sudoguru (int argc, char **argv)
 {
 #ifdef DEBUG
@@ -21,12 +27,14 @@ int sudoguru (int argc, char **argv)
     cv::FileStorage f;
     CameraModel camera;
 
+    // check for camera parameters
     if (argc > 1) {
         f.open(argv[1], cv::FileStorage::READ);
     } else {
         f.open("../cameraParameters.xml", cv::FileStorage::READ);
     }
 
+    // set camera paramaters
     if (f.isOpened()) {
         cv::Mat tmp;
         f["cameraMatrix"] >> tmp;
@@ -44,14 +52,15 @@ int sudoguru (int argc, char **argv)
     int height = static_cast<int> (cap.get(cv::CAP_PROP_FRAME_HEIGHT));
     int width = static_cast<int> (cap.get(cv::CAP_PROP_FRAME_WIDTH));
 
-    // frame buffers
+    /** INITIALIZE DATASTRUCTURES **/
+    // initialize frame buffers
     cv::Mat frame(height, width, CV_8UC3),
             frame_undist(height, width, CV_8UC3);
     cv::Mat frame_buf(height, width, CV_8UC1),
             frame_bin(height, width, CV_8UC1);
-    cv::Mat prspct;
+    cv::Mat extracted_brd(BOARDSIZE, BOARDSIZE, CV_8UC3);
 
-    // morhological structuring elements
+    // morhological structuring element
     cv::Mat _3x3cross = cv::getStructuringElement(cv::MORPH_CROSS,
                                                   cv::Size(3,3));
 
@@ -64,6 +73,7 @@ int sudoguru (int argc, char **argv)
     std::vector<std::vector<int>> solution;
     cv::Mat board_template, frame_mask;
 
+    // initialize solution matrix
     for (int i = 0; i < 9; i++) {
         solution.push_back(std::vector<int>());
         for (int j = 0; j < 9; j++) {
@@ -71,6 +81,7 @@ int sudoguru (int argc, char **argv)
         }
     }
 
+    // main loop
     for (;;)
     {
         cap >> frame;
@@ -84,6 +95,7 @@ int sudoguru (int argc, char **argv)
         } else {
             frame_undist = frame;
         }
+        cv::drawMarker(frame_undist, cv::Point(10, 10), CV_RGB(255, 0, 16), cv::MARKER_CROSS);
 #ifdef DEBUG
         auto t1 = std::chrono::high_resolution_clock::now();
 #endif
@@ -117,12 +129,13 @@ int sudoguru (int argc, char **argv)
                                           cv::Point2f(BOARDSIZE,BOARDSIZE),
                                           cv::Point2f(0.0f,BOARDSIZE)};
             cv::Matx33f H = cv::getPerspectiveTransform(pts, p);
-            cv::warpPerspective(frame_undist, prspct, H,
+            cv::warpPerspective(frame_undist, extracted_brd, H,
                                 cv::Size(BOARDSIZE,BOARDSIZE),
                                 cv::INTER_LINEAR);
-            grid = extractor->extractGrid(prspct);
+            grid = extractor->extractGrid(extracted_brd);
 
             if (grid != NULL) {
+                cv::drawMarker(frame_undist, cv::Point(10, 10), CV_RGB(230, 232, 16), cv::MARKER_CROSS);
                 sudokuBoard.setBoard(grid);
                 if(sudokuBoard.solve(&solution)) {
                     board_template = cv::Mat::zeros(cv::Size(BOARDSIZE, BOARDSIZE),
@@ -166,31 +179,35 @@ int sudoguru (int argc, char **argv)
                                             cv::INTER_LINEAR, cv::BORDER_CONSTANT,
                                             CV_RGB(255, 255, 255));
                         buffer = frame_undist & buffer;
+                        cv::drawMarker(buffer, cv::Point(10, 10), CV_RGB(54, 220, 16), cv::MARKER_STAR);
                         cv::imshow("Camera", buffer);
                         if (cv::waitKey(1) >= 0) { return EXIT_SUCCESS; }
                     }
                 }
             }
 
+#ifdef DEBUG
             // draw markers for points used in transform
             cv::drawMarker(frame_undist, pts[1], CV_RGB(255, 128, 0), cv::MARKER_DIAMOND);
             cv::drawMarker(frame_undist, pts[2], CV_RGB(255, 255, 56), cv::MARKER_DIAMOND);
             cv::drawMarker(frame_undist, pts[0], CV_RGB(56, 128, 255), cv::MARKER_DIAMOND);
             cv::drawMarker(frame_undist, pts[3], CV_RGB(230,57, 255), cv::MARKER_DIAMOND);
 
-#ifdef DEBUG
-            cv::imshow("Perspective", prspct);
+            // some debug images
+            cv::imshow("Perspective", extracted_brd);
             cv::imshow("Thresholded", frame_bin);
             cv::imshow("Biggest Connected Component", frame_buf);
 #endif
         }
+
+        // show result
         cv::imshow("Camera", frame_undist);
+
 #ifdef DEBUG
         auto t2 = std::chrono::high_resolution_clock::now();
         std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count()
                   << std::endl;
 #endif
-
         if (cv::waitKey(1) >= 0) {
             break;
         }
@@ -201,6 +218,8 @@ int sudoguru (int argc, char **argv)
 
 /**
  * @brief helper function to projectively transform euclidian points
+ * @param point  to be transformed
+ * @param H      cv::Mat<double> homography
  */
 static cv::Point2f transformPoint(cv::Point2f pt, cv::Mat H)
 {
@@ -214,8 +233,12 @@ static cv::Point2f transformPoint(cv::Point2f pt, cv::Mat H)
 
 /**
  * @brief helper function to check if board is outside frame
+ * @param corners    cornerpoints of the sudokuboard
+ * @param H          cv::Mat<double> homography relating current frame to refference
+ * @param frame_size size of frame (camera resolution)
  */
-static bool boardOutsideFrame(std::vector<cv::Point2f> corners, cv::Mat H, cv::Size frame_size)
+static bool boardOutsideFrame(std::vector<cv::Point2f> corners,
+                              cv::Mat H, cv::Size frame_size)
 {
     int pts_outside = 0;
     for (cv::Point2f corner : corners)

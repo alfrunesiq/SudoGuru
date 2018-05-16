@@ -81,22 +81,17 @@ std::vector<cv::Vec2f> bundleHough (std::vector<cv::Vec2f> hough,
         float rho = line[0],
             theta = line[1];
         bool isSet = false;
-        for (int i = 0 ; i < static_cast<int>(acc.size()) ; i++) {
-            if ((theta > 3.0f*CV_PI/4.0f) &&
-                (acc[i][0][0] < CV_PI/4.0f)) {
-                theta -= CV_PI;
-                rho = -rho;
-            }
-            if ((cv::abs(theta - acc[i][0][1]) < thresh_theta) &&
-                (cv::abs(rho - acc[i][0][0]) < thresh_rho)) {
+        for (size_t i = 0 ; i < acc.size() ; i++) {
+            if ( ((cv::abs(theta - acc[i][0][1]) < thresh_theta) ||
+                  cv::abs(theta - acc[i][0][1] - CV_PI) < thresh_theta) &&
+                 (cv::abs(rho - acc[i][0][0]) < thresh_rho) ) {
                 acc[i].push_back(line);
                 isSet = true;
             }
         }
         if (!isSet) {
-            std::vector<cv::Vec2f> tmp;
-            tmp.push_back(line);
-            acc.push_back(tmp);
+            acc.push_back(std::vector<cv::Vec2f>());
+            acc.back().push_back(line);
         }
     }
     for (std::vector<cv::Vec2f> par : acc) {
@@ -357,6 +352,33 @@ std::vector<cv::Rect> Extractor::findDigits(cv::Mat board_thr)
 }
 
 
+static void interpolateLines(std::vector<cv::Vec2f> *lines)
+{
+    for (size_t i = 1; i < (*lines).size(); i++) {
+        float diff = cv::abs(cv::abs((*lines)[i][0]) -
+                             cv::abs((*lines)[i-1][0]));
+        if (diff < GRID_GAP_MIN) {
+            // gap too tight: average and erase
+            (*lines)[i-1][0] = ((*lines)[i-1][0] + (*lines)[i][0]) / 2.0f;
+            (*lines).erase((*lines).begin() + i--);
+        } else if (diff > 2*GRID_GAP_MIN && diff < 2*GRID_GAP_MAX) {
+            // one missing line
+            (*lines).insert((*lines).begin() + i, (*lines)[i]);
+            (*lines)[i][0] -= diff/2.0f;
+            i++;
+        } else if (diff > 2*GRID_GAP_MAX && diff < 3*GRID_GAP_MAX) {
+            // two missing lines
+            diff = diff/3.0f;
+            (*lines).insert((*lines).begin() + i, (*lines)[i-1]);
+            (*lines)[i-1][0] += diff;
+            i++;
+            (*lines).insert((*lines).begin() + i, (*lines)[i]);
+            (*lines)[i+1][0] -= diff;
+            i++;
+        }
+    }
+}
+
 /**
  * @brief  attempts to extract the 9x9 sudokugrid
  * @param board   image of segmented board
@@ -383,19 +405,18 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     grad = 255.0f*(board_ - grad);
     grad.convertTo(bufHough, CV_8UC1);
 
-#ifdef DEBUG
-    cv::imshow("bufHough", bufHough);
-#endif
     // Threshold two versions; one used for finding lines,
     // and one for finding digits
     cv::adaptiveThreshold(board, buf, 255,
                           cv::ADAPTIVE_THRESH_GAUSSIAN_C,
                           cv::THRESH_BINARY_INV, 19, 8.0);
     cv::adaptiveThreshold(bufHough, bufHough, 255,
-                          cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-                          cv::THRESH_BINARY_INV, 19, 8.0);
-
-    cv::HoughLines(bufHough, lines, 1, CV_PI/180, BOARDSIZE-50);
+                          cv::ADAPTIVE_THRESH_MEAN_C,
+                          cv::THRESH_BINARY_INV, 19, 6.0);
+#ifdef DEBUG
+    cv::imshow("bufHough", bufHough);
+#endif
+    cv::HoughLines(bufHough, lines, 1, CV_PI/180, BOARDSIZE-70);
 
     // Thin lines first by removing non -vertical/-horizontal
     for (int i = static_cast<int>(lines.size()-1) ; i >= 0 ; i--) {
@@ -408,24 +429,25 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
             lines.erase(lines.begin() + i);
         }
     }
-    lines = bundleHough(lines, 17.0, 1.0);
+    lines = bundleHough(lines, 8.0, CV_PI/16.0f);
 
     // sort out vertical and horizontal lines and force theta to mean
     float thetaVavg = 0, thetaHavg = 0;
     for (cv::Vec2f line : lines) {
         if (line[1] < CV_PI/4.0f || line[1] > 3.0f*CV_PI/4.0f) {
             vertical.push_back(line);
-            if (line[1] < CV_PI/2.0f)
-                thetaVavg += line[1] + CV_PI;
-            else
-                thetaVavg += line[1];
+            if (line[0] < 0) {
+                vertical.back()[0] = -line[0];
+                vertical.back()[1] += CV_PI;
+            }
         } else {
             horizontal.push_back(line);
-            thetaHavg += line[1];
+            if (line[0] < 0) {
+                horizontal.back()[0] = -line[0];
+                horizontal.back()[1] += CV_PI;
+            }
         }
     }
-    thetaVavg /= static_cast<float>(vertical.size());
-    thetaHavg /= static_cast<float>(horizontal.size());
     for (size_t i = 0; i < vertical.size(); i++) {
         vertical[i][1] = thetaVavg;
     }
@@ -459,74 +481,28 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     if (horizontal.back()[0] < (BOARDSIZE - GRID_GAP_MIN)) {
         horizontal.push_back(cv::Vec2f(BOARDSIZE, horizontal.back()[1]));
     }
-    for (size_t i = 1; i < vertical.size(); i++) {
-        float diff = cv::abs(vertical[i][0] - vertical[i-1][0]);
-        if (diff < GRID_GAP_MIN) {
-            if (vertical[i-1][0] < 0) {
-                vertical[i-1][0] = -vertical[i-1][0];
-                vertical[i-1][1] = vertical[i-1][1] < CV_PI/2.0f ?
-                                        vertical[i-1][1] + CV_PI :
-                                        vertical[i-1][1] - CV_PI;
-            }
-            if (vertical[i][0] < 0) {
-                vertical[i][0] = -vertical[i][0];
-                vertical[i][1] = vertical[i][1] < CV_PI/2.0f ?
-                                      vertical[i][1] + CV_PI :
-                                      vertical[i][1] - CV_PI;
-            }
-            vertical[i-1][0] = (vertical[i-1][0] + vertical[i][0]) / 2.0f;
-            vertical.erase(vertical.begin() + i--);
-        } else if (diff > 2*GRID_GAP_MIN && diff < 2*GRID_GAP_MAX) {
-            // one missing line
-            vertical.insert(vertical.begin() + i, vertical[i]);
-            vertical[i][0] -= diff/2.0f;
-            i++;
-        } else if (diff > 2*GRID_GAP_MAX && diff < 3*GRID_GAP_MAX) {
-            // two missing lines
-            diff = diff/3.0f;
-            vertical.insert(vertical.begin() + i, vertical[i-1]);
-            vertical[i-1][0] += diff;
-            i++;
-            vertical.insert(vertical.begin() + i, vertical[i]);
-            vertical[i+1][0] -= diff;
-            i++;
-        }
+
+    interpolateLines(&horizontal);
+    interpolateLines(&vertical);
+
+#ifdef DEBUG // draw lines
+    cv::Mat lineBuf = cv::Mat::zeros(bufHough.size(), CV_8UC1);
+    for (cv::Vec2f line : vertical)
+    {
+        float y = line[0] / std::sin(line[1]),
+            x = -1 / std::tan(line[1]);
+        cv::line(lineBuf, cv::Point(0, y),
+                 cv::Point(lineBuf.cols, lineBuf.cols*x+y), CV_RGB(0,0,255));
     }
-    for (size_t i = 1; i < horizontal.size(); i++) {
-        float diff = cv::abs(horizontal[i][0] - horizontal[i-1][0]);
-        if (diff < 16.0f) {
-            // too tight: average and remove
-            if (horizontal[i-1][0] < 0) {
-                horizontal[i-1][0] = -horizontal[i-1][0];
-                horizontal[i-1][1] = horizontal[i-1][1] < CV_PI/2.0f ?
-                                                      horizontal[i-1][1] + CV_PI :
-                    horizontal[i-1][1] - CV_PI;
-            }
-            if (horizontal[i][0] < 0) {
-                horizontal[i][0] = -horizontal[i][0];
-                horizontal[i][1] = horizontal[i][1] < CV_PI/2.0f ?
-                                        horizontal[i][1] + CV_PI :
-                                        horizontal[i][1] - CV_PI;
-            }
-            horizontal[i-1][0] = (horizontal[i-1][0] + horizontal[i][0]) / 2.0f;
-            horizontal.erase(horizontal.begin() + i--);
-        } else if (diff > 2*GRID_GAP_MIN && diff < 2*GRID_GAP_MAX) {
-            // one missing line
-            horizontal.insert(horizontal.begin() + i, horizontal[i]);
-            horizontal[i][0] -= diff/2.0f;
-            i++;
-        } else if (diff > 3*GRID_GAP_MIN && diff < 3*GRID_GAP_MAX) {
-            // two missing lines
-            diff = diff/3.0f;
-            horizontal.insert(horizontal.begin() + i, horizontal[i-1]);
-            horizontal[i-1][0] += diff;
-            i++;
-            horizontal.insert(horizontal.begin() + i, horizontal[i]);
-            horizontal[i+1][0] -= diff;
-            i++;
-        }
+    for (cv::Vec2f line : horizontal)
+    {
+        float y = line[0] / std::sin(line[1]),
+            x = -1 / std::tan(line[1]);
+        cv::line(lineBuf, cv::Point(0, y),
+                 cv::Point(lineBuf.cols, lineBuf.cols*x+y), CV_RGB(0,0,255));
     }
-    /* END: interpolate lines */
+    cv::imshow("Sanity lines", lineBuf);
+#endif
 
     // SANITY CHECK 2: Did we resolve all 10 lines?
     if (vertical.size() != 10 && horizontal.size() != 10) {
@@ -538,17 +514,19 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
 
     // SANITY CHECK 3: does line gaps make sense?
     for (size_t i = 1; i < vertical.size(); i++) {
-        float diff = cv::abs(vertical[i][0] - vertical[i-1][0]);
+        float diff = cv::abs(cv::abs(vertical[i][0]) -
+                             cv::abs(vertical[i-1][0]));
         if (diff > GRID_GAP_MAX || diff < GRID_GAP_MIN) {
 #ifdef DEBUG
-            std::cout << "DEBUG: Grid gaps doesn't fit model\n";
+            std::cout << "DEBUG:" << diff << "Grid gaps doesn't fit model\n";
 #endif
             return NULL;
         }
-        diff = cv::abs(horizontal[i][0] - horizontal[i-1][0]);
+        diff = cv::abs(cv::abs(horizontal[i][0]) -
+                       cv::abs(horizontal[i-1][0]));
         if (diff > GRID_GAP_MAX|| diff < GRID_GAP_MIN) {
 #ifdef DEBUG
-            std::cout << "DEBUG: Grid gaps doesn't fit model\n";
+            std::cout << "DEBUG:" << diff << "Grid gaps doesn't fit model\n";
 #endif
             return NULL;
         }

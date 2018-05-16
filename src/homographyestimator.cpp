@@ -175,11 +175,11 @@ cv::Mat HomographyEstimator::estimateHomography(cv::Mat frame)
         if (inliers.size() < MIN_NUM_INLIERS) {
             return cv::Mat();
         }
-        /* EXPERIMENTAL update featureset */
         else if (inliers.size() < keypoints.size()/3 &&
                  keypoints.size() > 200 &&
                  inliers.size()*5 > keypt_frame.size()*4 &&
                  H.rows == 3){
+            // update featureset
             updateFeaturePoints(keypoints, frame_gray, H.inv());
             return H;
         }

@@ -23,6 +23,10 @@
 
 #define BOARDSIZE    9*34 // roughly 32x32 per box
 
+/**
+ * Structure containing camera matrix and distortion coefficients
+ * of the camera (if provided).
+<*/
 struct CameraModel
 {
     bool isSet;
@@ -30,11 +34,7 @@ struct CameraModel
     cv::Vec<double, 5> dist_coeffs;
 };
 
+// main program function
 int sudoguru(int argc, char **argv);
-
-static cv::Point2f transformPoint(cv::Point2f pt, cv::Mat H);
-
-static bool boardOutsideFrame(std::vector<cv::Point2f> corners,
-                              cv::Mat H, cv::Size frame_size);
 
 #endif /* _SUDOGURU_HPP_ */

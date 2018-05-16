@@ -18,15 +18,15 @@
 #define DIGIT_MIN_AREA     82
 #define DIGIT_MAX_AREA     1156  // 34*34
 #define DIGIT_HEIGHT_MIN   7
-#define DIGIT_HEIGHT_MAX   32
+#define DIGIT_HEIGHT_MAX   33
 #define DIGIT_WIDTH_MIN    7
-#define DIGIT_WIDTH_MAX    32
+#define DIGIT_WIDTH_MAX    33
 
-#define HOUGH_THRESHOLD    BOARDSIZE-100
+#define HOUGH_THRESHOLD    180
 
 #define GRID_GAP_AVG       34
 #define GRID_GAP_MIN       27
-#define GRID_GAP_MAX       36
+#define GRID_GAP_MAX       37
 
 
 /**
