@@ -88,6 +88,17 @@ public:
     }
     Extractor(std::string pathToTfProto) {
         net = cv::dnn::readNetFromTensorflow(pathToTfProto);
+        if (net.empty()) {
+            printf("ERROR: Network empty: \"%s\"", pathToTfProto.c_str());
+            throw std::exception();
+        }
+        // initialize grid
+        for (int i = 0; i < 9; i++) {
+            grid.push_back(std::vector<int>());
+            for (int j = 0; j < 9; j++) {
+                grid[i].push_back(0);
+            }
+        }
     }
     ~Extractor() {}
 

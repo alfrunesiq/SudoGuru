@@ -150,7 +150,7 @@ std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
         edges.push_back(lines[0]);
         edges.push_back(cv::Vec2f());
         // use first line to define orientation of line 0 and 2
-        // and define intervalls that define relative orthogonality
+        // and define intervalls that define relative "orthogonality"
         if (edges[0][1] < CV_PI/4.0f) {
             theta_intvl[0] = edges[0][1] + 3.0f*CV_PI/4.0f;
             theta_intvl[1] = CV_PI;
@@ -182,17 +182,18 @@ std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
                 float rho0 = cv::abs(edges[0][0]),
                       rho2 = cv::abs(edges[2][0]);
                 intrsct = getLineIntersection(edges[2], lines[i]);
-                if ( ((intrsct == cv::Point(0,0))  ||
-                      (intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct1.dot(intrsct1))) &&
-                     (cv::abs(rho-rho2) > cv::abs(rho2-rho0)) ) {
+                // vanishing point further away than current config?
+                // (rejects obvious detected non-parallel lines)
+                // and if so is the lines further apart in terms of rho?
+                if ((intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct1.dot(intrsct1)) &&
+                    (cv::abs(rho-rho2) > cv::abs(rho2-rho0)) ) {
                     edges[0] = lines[i];
                     intrsct1 = getLineIntersection(edges[0], edges[2]);
                     continue;
                 }
                 intrsct = getLineIntersection(edges[0], lines[i]);
-                if ( ((intrsct == cv::Point(0,0)) ||
-                      (intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct1.dot(intrsct1))) &&
-                         (cv::abs(rho-rho0) > cv::abs(rho2-rho0)) ) {
+                if ((intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct1.dot(intrsct1)) &&
+                    (cv::abs(rho-rho0) > cv::abs(rho2-rho0)) ) {
                     edges[2] = lines[i];
                     intrsct1 = getLineIntersection(edges[0], edges[2]);
                 }
@@ -206,17 +207,15 @@ std::vector<cv::Vec2f> Extractor::extractEdges (cv::Mat img_thr)
                 intrsct = getLineIntersection(edges[3], lines[i]);
                 float rho1 = cv::abs(edges[1][0]),
                       rho3 = cv::abs(edges[3][0]);
-                if ( ((intrsct == cv::Point(0,0)) ||
-                      (intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct2.dot(intrsct2)) ) &&
-                     (cv::abs(rho-rho3) > cv::abs(rho3-rho1)) ) {
+                if ((intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct2.dot(intrsct2)) &&
+                    (cv::abs(rho-rho3) > cv::abs(rho3-rho1)) ) {
                     edges[1] = lines[i];
                     intrsct2 = getLineIntersection(edges[1], edges[3]);
                     continue;
                 }
                 intrsct = getLineIntersection(edges[1], lines[i]);
-                if ( ((intrsct == cv::Point(0,0)) ||
-                      (intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct2.dot(intrsct2))) &&
-                     (cv::abs(rho-rho1) > cv::abs(rho1-rho3)) ) {
+                if ((intrsct.dot(intrsct) + SEARCH_MARGIN > intrsct2.dot(intrsct2)) &&
+                    (cv::abs(rho-rho1) > cv::abs(rho1-rho3)) ) {
                     edges[3] = lines[i];
                     intrsct2 = getLineIntersection(edges[1], edges[3]);
                 }
@@ -397,7 +396,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     // gradients, such that vertical and horizontal lines
     // get more pronounced
     board.convertTo(board_, CV_32F);
-    cv::minMaxLoc(board, &min, &max);
+    cv::minMaxLoc(board_, &min, &max);
     board_ = (board_ - min)/(max-min);
     cv::filter2D(board_, grad, CV_32F, _prewitKrnl);
     cv::filter2D(board_, gradY, CV_32F, _prewitKrnl.t());
@@ -405,6 +404,9 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     grad = 255.0f*(board_ - grad);
     grad.convertTo(bufHough, CV_8UC1);
 
+#ifdef DEBUG
+    cv::imshow("bufHough", bufHough);
+#endif
     // Threshold two versions; one used for finding lines,
     // and one for finding digits
     cv::adaptiveThreshold(board, buf, 255,
@@ -412,27 +414,23 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
                           cv::THRESH_BINARY_INV, 19, 8.0);
     cv::adaptiveThreshold(bufHough, bufHough, 255,
                           cv::ADAPTIVE_THRESH_MEAN_C,
-                          cv::THRESH_BINARY_INV, 19, 6.0);
-#ifdef DEBUG
-    cv::imshow("bufHough", bufHough);
-#endif
-    cv::HoughLines(bufHough, lines, 1, CV_PI/180, BOARDSIZE-70);
+                          cv::THRESH_BINARY_INV, 19, 5.0);
+    cv::HoughLines(bufHough, lines, 1, CV_PI/180, BOARDSIZE-50);
 
     // Thin lines first by removing non -vertical/-horizontal
     for (int i = static_cast<int>(lines.size()-1) ; i >= 0 ; i--) {
         float theta = (lines[i][1] > CV_PI) ? lines[i][1] - 1 :
             lines[i][1];
-        if ( ((theta > CV_PI/18.0f) &&
-              (theta < (CV_PI/2.0f - CV_PI/18.0f))) ||
-             ((theta > (CV_PI/2.0f + CV_PI/18.0f)) &&
-              (theta < (17.0f*CV_PI/18.0f)))) {
+        if ( ((theta > CV_PI/16.0f) &&
+              (theta < (CV_PI/2.0f - CV_PI/16.0f))) ||
+             ((theta > (CV_PI/2.0f + CV_PI/16.0f)) &&
+              (theta < (15.0f*CV_PI/16.0f)))) {
             lines.erase(lines.begin() + i);
         }
     }
     lines = bundleHough(lines, 8.0, CV_PI/16.0f);
 
     // sort out vertical and horizontal lines and force theta to mean
-    float thetaVavg = 0, thetaHavg = 0;
     for (cv::Vec2f line : lines) {
         if (line[1] < CV_PI/4.0f || line[1] > 3.0f*CV_PI/4.0f) {
             vertical.push_back(line);
@@ -447,12 +445,6 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
                 horizontal.back()[1] += CV_PI;
             }
         }
-    }
-    for (size_t i = 0; i < vertical.size(); i++) {
-        vertical[i][1] = thetaVavg;
-    }
-    for (size_t i = 0; i < horizontal.size(); i++) {
-        horizontal[i][1] = thetaHavg;
     }
 
 
@@ -469,6 +461,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     std::sort(horizontal.begin(), horizontal.end(), compRho);
 
     // (try to) interpolate missing lines
+    // check for outer lines
     if (vertical[0][0] > GRID_GAP_MIN) {
         vertical.insert(vertical.begin(), cv::Vec2f(0.0f, vertical[0][1]));
     }
@@ -481,7 +474,7 @@ std::vector<std::vector<int>> *Extractor::extractGrid (cv::Mat board) {
     if (horizontal.back()[0] < (BOARDSIZE - GRID_GAP_MIN)) {
         horizontal.push_back(cv::Vec2f(BOARDSIZE, horizontal.back()[1]));
     }
-
+    // interpolate intermediate lines
     interpolateLines(&horizontal);
     interpolateLines(&vertical);
 
@@ -607,7 +600,9 @@ cv::Point2f getLineIntersection(cv::Vec2f rt1, cv::Vec2f rt2)
     cv::Vec3f intersect = l1.cross(l2);
     if (std::abs(intersect[2]) < 1e-8f) {
         // lines are (close to) parallel to the normal plane
-        return cv::Point2f();
+        float x = intersect[0] < 0 ? -1e10f : 1e10f;
+        float y = intersect[1] < 0 ? -1e10f : 1e10f;
+        return cv::Point2f(x, y);
     } else {
         return cv::Point2f(std::abs(intersect[0]/intersect[2]),
                            std::abs(intersect[1]/intersect[2]));

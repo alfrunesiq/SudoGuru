@@ -9,6 +9,9 @@ static bool boardOutsideFrame(std::vector<cv::Point2f> corners,
                               cv::Mat H, cv::Size frame_size);
 
 
+/**
+ * @brief sudoguru main function.
+ */
 int sudoguru (int argc, char **argv)
 {
 #ifdef DEBUG
@@ -22,8 +25,14 @@ int sudoguru (int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    Extractor *extractor = new Extractor;
+    Extractor *extractor;
     HomographyEstimator *estimator = new HomographyEstimator;
+    if (argc > 2) {
+        // interpret second argument as path to tensorflow graph-def file (*.pb)
+        extractor = new Extractor(std::string(argv[2]));
+    } else {
+        extractor = new Extractor;
+    }
     cv::FileStorage f;
     CameraModel camera;
 
@@ -95,6 +104,8 @@ int sudoguru (int argc, char **argv)
         } else {
             frame_undist = frame;
         }
+	// Draw marker to indicate state of the loop cycles between red, yellow and green
+	// depending on which state the program reaches
         cv::drawMarker(frame_undist, cv::Point(10, 10), CV_RGB(255, 0, 16), cv::MARKER_CROSS);
 #ifdef DEBUG
         auto t1 = std::chrono::high_resolution_clock::now();
@@ -218,6 +229,8 @@ int sudoguru (int argc, char **argv)
 
 /**
  * @brief helper function to projectively transform euclidian points
+ * TODO: put these in a seperate library "projTools" or something, and reuse
+ *       in homography estimator.
  * @param point  to be transformed
  * @param H      cv::Mat<double> homography
  */

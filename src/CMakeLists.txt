@@ -8,6 +8,7 @@ if (MSVC)
   add_definitions(/D_USE_MATH_DEFINES)
 else ()
   set(compiler_options -Wall -Wextra -Wpedantic)
+  # uncomment line below for a lot of colorless windows during execution
   #add_definitions(-DDEBUG)
 endif (MSVC)
 
